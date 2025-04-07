@@ -22,7 +22,9 @@
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^13.5.0",
     "bcryptjs": "^3.0.2",
+    "body-parser": "^1.20.0",
     "dotenv": "^16.4.7",
+    "express": "^4.18.2",
     "formik": "^2.4.6",
     "mysql2": "^3.14.0",
     "react": "^18.2.0",
@@ -34,16 +36,20 @@
     "yup": "^1.6.1"
   },
   "scripts": {
-    "start": "react-scripts start",
+    "start": "node server.js",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "dev": "concurrently \"react-scripts start\" \"node server.js\""
   },
   "eslintConfig": {
     "extends": [
       "react-app",
       "react-app/jest"
     ]
+  },
+  "devDependencies": {
+    "concurrently": "^7.0.0"
   },
   "browserslist": {
     "production": [
