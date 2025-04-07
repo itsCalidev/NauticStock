@@ -5,6 +5,7 @@ import { Routes, Route } from "react-router-dom";
 
 import Topbar from "./pages/layouts/Topbar";
 import Sidebar from "./pages/layouts/Sidebar";
+import AccessibilitySidebar from "./pages/layouts/SidebarAccesibility";
 import Dashboard from "./pages/dashboard";
 import Team from "./pages/team";
 import Products from "./pages/products";
@@ -33,6 +34,7 @@ function App() {
             </Routes>
           </main>
         </div>
+        <AccessibilitySidebar />
       </ThemeProvider>
     </ColorModeContext.Provider>
   );
