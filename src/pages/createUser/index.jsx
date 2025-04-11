@@ -1,26 +1,60 @@
-import { Box, Button, TextField, useTheme, Typography } from "@mui/material";
+import { Box, Button, TextField, useTheme } from "@mui/material";
 import { Formik } from "formik";
 import * as yup from "yup";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import Header from "../../components/Header";
 import { Token } from "../../theme";
+import { useState } from "react";
+import AppSnackbar from "../../components/AppSnackbar";
 
 const CreateUser = () => {
   const isNonMobile = useMediaQuery("(min-width:600px)");
   const theme = useTheme();
   const colors = Token(theme.palette.mode);
 
-  const handleFormSubmit = async (values) => {
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
+
+  const handleFormSubmit = async (values, { resetForm }) => {
     try {
       const response = await fetch("http://localhost:3000/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
+
       const data = await response.json();
-      console.log("Usuario registrado:", data);
+
+      if (response.ok) {
+        setSnackbar({
+          open: true,
+          message: "Usuario creado exitosamente",
+          severity: "success",
+        });
+        resetForm();
+      } else if (response.status === 400 || response.status === 409) {
+        setSnackbar({
+          open: true,
+          message: data.message || "Ya existe un usuario con esos datos",
+          severity: "warning",
+        });
+      } else {
+        setSnackbar({
+          open: true,
+          message: "Error inesperado al crear el usuario",
+          severity: "error",
+        });
+      }
     } catch (error) {
-      console.error("Error al registrar el usuario:", error);
+      console.error("Error:", error);
+      setSnackbar({
+        open: true,
+        message: "Fallo de conexión con el servidor",
+        severity: "error",
+      });
     }
   };
 
@@ -37,7 +71,7 @@ const CreateUser = () => {
         sx={{ backgroundColor: colors.primary[400] }}
       >
         <Formik
-          onSubmit={handleFormSubmit}
+          onSubmit={(values, actions) => handleFormSubmit(values, actions)}
           initialValues={initialValues}
           validationSchema={checkoutSchema}
         >
@@ -151,6 +185,13 @@ const CreateUser = () => {
           )}
         </Formik>
       </Box>
+
+      <AppSnackbar
+        open={snackbar.open}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        message={snackbar.message}
+        severity={snackbar.severity}
+      />
     </Box>
   );
 };
