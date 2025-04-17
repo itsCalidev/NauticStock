@@ -43,6 +43,25 @@ class User extends Model {
     const result = await this.delete();
     return result;
   }
+  
+  async getAllUsers() {
+    // 1) Columnas de user + el campo role.role AS access
+    const cols = [
+      "user.id",
+      // todos los fillable van prefijados con user.
+      ...this.fillable.map(f => `user.${f}`),
+      // alias “access” para usarlo de inmediato en el frontend
+      "role.role AS access"
+    ];
+
+    // 2) Construye y ejecuta la consulta con join
+    const rows = await this
+      .select(cols)                                     // SELECT user.id, user.name, …, role.role AS access
+      .join("role", "role.id = user.roleId", "LEFT")    // LEFT JOIN role ON role.id = user.roleId
+      .get();                                           // ejecuta y resetea
+
+    return rows;
+  }
 }
 
 module.exports = User;

@@ -35,6 +35,11 @@ class UserController extends Controller {
     const result = await this.userModel.deleteUser(id);
     return result;
   }
+
+  async getAllUsers() {
+    const users = await this.userModel.getAllUsers();
+    return users;
+  }
 }
 
 module.exports = UserController;
