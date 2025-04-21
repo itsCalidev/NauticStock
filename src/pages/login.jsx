@@ -1,3 +1,7 @@
+// pages/login.jsx
+import React, { useState, useContext } from "react";
+import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Button,
@@ -7,15 +11,13 @@ import {
   useMediaQuery,
   IconButton,
 } from "@mui/material";
-import { useState, useContext } from "react";
+import { Brightness4, Brightness7 } from "@mui/icons-material";
 import { Token, ColorModeContext } from "../theme";
+import AppSnackbar from "../components/AppSnackbar";
 import AccessibilitySidebar from "../pages/layouts/SidebarAccesibility";
 import LoginImage from "../assets/Mantenimiento_Elect.png";
 import LogoImage from "../assets/SEMAR.png";
-import Hojas from "../assets/Hojitas.png"; 
-import { Brightness4, Brightness7 } from "@mui/icons-material";
-import AppSnackbar from "../components/AppSnackbar";
-import { useNavigate } from "react-router-dom";
+import Hojas from "../assets/Hojitas.png";
 
 const Login = () => {
   const theme = useTheme();
@@ -23,19 +25,50 @@ const Login = () => {
   const colorMode = useContext(ColorModeContext);
   const isNonMobile = useMediaQuery("(min-width:900px)");
   const isDark = theme.palette.mode === "dark";
-
   const navigate = useNavigate();
 
-  const [credentials, setCredentials] = useState({
-    username: "",
-    password: "",
-  });
-
+  const [credentials, setCredentials] = useState({ email: "", password: "" });
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
-    severity: "success",
+    severity: "info",
   });
+
+  const handleLogin = async () => {
+    const { email, password } = credentials;
+    if (!email || !password) {
+      setSnackbar({
+        open: true,
+        message: "Por favor, completa todos los campos.",
+        severity: "warning",
+      });
+      return;
+    }
+
+    try {
+      const { data } = await axios.post("/login", { email, password });
+      // guardar token y datos del usuario
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      // configurar axios para enviar el token en futuras peticiones
+      axios.defaults.headers.common[
+        "Authorization"
+      ] = `Bearer ${data.token}`;
+
+      setSnackbar({
+        open: true,
+        message: "¡Bienvenido!",
+        severity: "success",
+      });
+      setTimeout(() => navigate("/dashboard"), 800);
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.error || err.message,
+        severity: "error",
+      });
+    }
+  };
 
   return (
     <Box
@@ -49,7 +82,6 @@ const Login = () => {
         overflow: "hidden",
       }}
     >
-      
       {/* Fondo institucional con hojitas */}
       <Box
         component="img"
@@ -97,6 +129,7 @@ const Login = () => {
           justifyContent: "center",
           alignItems: "center",
           p: 5,
+          zIndex: 1,
         }}
       >
         <Box
@@ -108,7 +141,6 @@ const Login = () => {
             borderRadius: "24px",
             boxShadow: 3,
             position: "relative",
-            
           }}
         >
           <IconButton
@@ -123,25 +155,25 @@ const Login = () => {
             fontWeight="bold"
             textAlign="center"
             mb={4}
-            color={isDark ? "#000000" : colors.grey[900]}
+            color={isDark ? "#000" : colors.grey[900]}
           >
-            Inicio de Sesion
+            Inicio de Sesión
           </Typography>
 
           <TextField
             fullWidth
             variant="filled"
-            label="Usuario"
+            label="Correo electrónico"
             sx={{
               mb: 3,
               backgroundColor: isDark ? "#b7677e" : "#fff",
               borderRadius: "12px",
-              input: { color: isDark ? "#fff" : "#fff" },
+              input: { color: "#fff" },
             }}
             InputProps={{ disableUnderline: true }}
-            value={credentials.username}
+            value={credentials.email}
             onChange={(e) =>
-              setCredentials({ ...credentials, username: e.target.value })
+              setCredentials({ ...credentials, email: e.target.value })
             }
           />
 
@@ -154,7 +186,7 @@ const Login = () => {
               mb: 3,
               backgroundColor: isDark ? "#b7677e" : "#fff",
               borderRadius: "12px",
-              input: { color: isDark ? "#fff" : "#fff" },
+              input: { color: "#fff" },
             }}
             InputProps={{ disableUnderline: true }}
             value={credentials.password}
@@ -179,24 +211,7 @@ const Login = () => {
                 backgroundColor: "#6f182e",
               },
             }}
-            onClick={() => {
-              if (!credentials.username || !credentials.password) {
-                setSnackbar({
-                  open: true,
-                  message: "Por favor, llena todos los campos.",
-                  severity: "warning",
-                });
-              } else {
-                setSnackbar({
-                  open: true,
-                  message: "Inicio de sesión exitoso",
-                  severity: "success",
-                });
-                setTimeout(() => {
-                  navigate("/dashboard");
-                }, 1500);
-              }
-            }}
+            onClick={handleLogin}
           >
             Iniciar sesión
           </Button>
@@ -216,26 +231,29 @@ const Login = () => {
           p: 4,
         }}
       >
-        <img
-          src={LogoImage}
-          alt="logo"
-          style={{
-            marginRight: "120%",
-            width: "300px",
-            objectFit: "contain",
-            marginBottom: "40px",
-            zIndex: 1,
-          }}
-        />
-        <img
-          src={LoginImage}
-          alt="escudo"
-          style={{
-            maxWidth: "60%",
-            height: "auto",
-            filter: isDark ? "grayscale(0.2)" : "none",
-          }}
-        />
+        <Box mt={4}>
+          <Box
+            component="img"
+            src={LogoImage}
+            alt="logo"
+            sx={{
+              width: "300px",
+              objectFit: "contain",
+            }}
+          />
+        </Box>
+        <Box>
+          <Box
+            component="img"
+            src={LoginImage}
+            alt="escudo"
+            sx={{
+              maxWidth: "60%",
+              height: "auto",
+              filter: isDark ? "grayscale(0.2)" : "none",
+            }}
+          />
+        </Box>
         <Box height="40px" />
       </Box>
 

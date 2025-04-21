@@ -14,6 +14,15 @@ class User extends Model {
       "roleId",
     ];
   }
+    /** Busca un usuario por su email */
+    async findByEmail(email) {
+      // Seleccionamos todos los campos (incluyendo password)
+      const rows = await this
+        .select(["*"])
+        .where([["email", email]])
+        .get();
+      return rows[0] || null;
+    }
 
   async registerUser(data) {
     const filteredData = {};

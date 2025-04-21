@@ -1,24 +1,36 @@
+// components/Topbar.jsx
 import { Box, IconButton, useTheme, Button } from '@mui/material';
 import { useContext } from 'react';
 import { ColorModeContext, Token } from '../../theme';
 import InputBase from "@mui/material/InputBase";
-import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
-import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import LightModeOutlinedIcon  from "@mui/icons-material/LightModeOutlined";
+import DarkModeOutlinedIcon   from "@mui/icons-material/DarkModeOutlined";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
-import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
-import LogoutIcon from "@mui/icons-material/Logout";
-import SearchIcon from "@mui/icons-material/Search";
+import SettingsOutlinedIcon   from "@mui/icons-material/SettingsOutlined";
+import PersonOutlinedIcon     from "@mui/icons-material/PersonOutlined";
+import LogoutIcon             from "@mui/icons-material/Logout";
+import SearchIcon             from "@mui/icons-material/Search";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import axios                  from "axios";
+
 
 const Topbar = () => {
-  const theme = useTheme();
-  const colors = Token(theme.palette.mode);
-  const colorMode = useContext(ColorModeContext);
+  const theme    = useTheme();
+  const colors   = Token(theme.palette.mode);
+  const colorMode= useContext(ColorModeContext);
   const navigate = useNavigate();
   const location = useLocation();
-
   const profileLocation = location.pathname === "/profile";
+
+  const handleLogout = () => {
+    // 1) Borra el token y datos de usuario
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    // 2) Limpia el header de Authorization en Axios
+    delete axios.defaults.headers.common["Authorization"];
+    // 3) Redirige al login
+    navigate("/login", { replace: true });
+  };
 
   return (
     <Box display="flex" justifyContent="space-between" p={2}>
@@ -62,10 +74,10 @@ const Topbar = () => {
           color="error"
           size="small"
           startIcon={<LogoutIcon />}
-          onClick={() => navigate("/login")}
+          onClick={handleLogout}
           sx={{ ml: 1, fontWeight: "bold", textTransform: "none" }}
         >
-          Salir
+          Cerrar sesión
         </Button>
       </Box>
     </Box>
