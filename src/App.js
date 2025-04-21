@@ -13,6 +13,7 @@ import Providers from "./pages/providers";
 import Profile from "./pages/profile";
 import CreateUser from "./pages/createUser";
 import Login from "./pages/login";
+import PrivateRoute from "./components/PrivateRoute";
 
 function App() {
   const [theme, ColorMode] = useMode();
@@ -22,31 +23,32 @@ function App() {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <Routes>
-          {/* Login es una ruta pública, sin layout */}
+          {/* Ruta pública */}
           <Route path="/login" element={<Login />} />
-
-          {/* Layout general para rutas privadas */}
-          <Route
-            path="/*"
-            element={
-              <div className="app">
-                <Sidebar />
-                <main className="content">
-                  <Topbar />
-                  <Routes>
-                    <Route path="/" element={<Navigate to="/dashboard" />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/team" element={<Team />} />
-                    <Route path="/products" element={<Products />} />
-                    <Route path="/providers" element={<Providers />} />
-                    <Route path="/createUser" element={<CreateUser />} />
-                    <Route path="/profile" element={<Profile />} />
-                  </Routes>
-                </main>
-                <AccessibilitySidebar />
-              </div>
-            }
-          />
+           {/* Layout general para rutas privadas */}
+         <Route
+           path="/*"
+           element={
+             <PrivateRoute>
+               <div className="app">
+                 <Sidebar />
+                 <main className="content">
+                   <Topbar />
+                   <Routes>
+                     <Route path="/"           element={<Navigate to="/dashboard" />} />
+                     <Route path="/dashboard"  element={<Dashboard />} />
+                     <Route path="/team"       element={<Team />} />
+                     <Route path="/products"   element={<Products />} />
+                     <Route path="/providers"  element={<Providers />} />
+                     <Route path="/createUser" element={<CreateUser />} />
+                     <Route path="/profile"    element={<Profile />} />
+                   </Routes>
+                 </main>
+                 <AccessibilitySidebar />
+               </div>
+             </PrivateRoute>
+           }
+         />
         </Routes>
       </ThemeProvider>
     </ColorModeContext.Provider>

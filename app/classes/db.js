@@ -1,5 +1,5 @@
 const mysql = require("mysql2/promise");
-const config = require("../config/config");
+const { db: dbConfig } = require("../config/config");
 
 class DB {
   constructor(table) {
@@ -15,7 +15,7 @@ class DB {
 
   async connect() {
     if (!this.connection) {
-      this.connection = await mysql.createConnection(config);
+      this.connection = await mysql.createConnection(dbConfig);
     }
     return this.connection;
   }

@@ -20,6 +20,16 @@ app.post("/users", async (req, res) => {
   }
 });
 
+// LOGIN
+app.post("/login", async (req, res) => {
+  try {
+    const { token, user } = await userCtrl.login(req.body);
+    res.json({ token, user });
+  } catch (err) {
+    res.status(401).json({ error: err.message });
+  }
+});
+
 // <<< DEFINO AQUÍ EL GET /users >>>
 app.get("/users", async (req, res) => {
   try {

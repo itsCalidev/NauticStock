@@ -1,5 +1,8 @@
 const Controller = require("./Controller");
 const User = require("../models/User");
+const bcrypt     = require("bcryptjs");
+const jwt        = require("jsonwebtoken");
+const config     = require("../config/config");
 
 class UserController extends Controller {
   constructor() {
@@ -39,6 +42,37 @@ class UserController extends Controller {
   async getAllUsers() {
     const users = await this.userModel.getAllUsers();
     return users;
+  }
+
+  async login({ email, password }) {
+    if (!email || !password) {
+      throw new Error("Email y contraseña son requeridos");
+    }
+
+    const user = await this.userModel.findByEmail(email);
+    if (!user) {
+      throw new Error("Usuario no encontrado");
+    }
+
+    const isMatch = bcrypt.compareSync(password, user.password);
+    if (!isMatch) {
+      throw new Error("Contraseña incorrecta");
+    }
+
+    // Genera token con payload mínimo
+    const payload = { id: user.id, name: user.name, roleId: user.roleId };
+    const token   = jwt.sign(payload, config.jwtSecret, { expiresIn: "2h" });
+
+    // Retornamos token y datos básicos (sin password)
+    return {
+      token,
+      user: {
+        id:    user.id,
+        name:  user.name,
+        email: user.email,
+        roleId: user.roleId
+      }
+    };
   }
 }
 
