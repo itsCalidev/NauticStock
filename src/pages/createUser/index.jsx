@@ -1,16 +1,44 @@
-import { Box, Button, TextField, useTheme } from "@mui/material";
+// src/pages/createUser.jsx
+import React, { useState } from "react";
+import {
+  Box,
+  Button,
+  TextField,
+  useTheme,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+} from "@mui/material";
 import { Formik } from "formik";
 import * as yup from "yup";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import Header from "../../components/Header";
 import { Token } from "../../theme";
-import { useState } from "react";
 import AppSnackbar from "../../components/AppSnackbar";
+
+const checkoutSchema = yup.object().shape({
+  name:     yup.string().required("Requerido"),
+  password: yup.string().required("Requerido").min(8, "Mínimo 8 caracteres"),
+  account:  yup.string().required("Requerido"),
+  email:    yup.string().email("Correo inválido").required("Requerido"),
+  ranks:    yup.string().required("Requerido"),
+  roleId:   yup.number().required("Requerido"),
+});
+
+const initialValues = {
+  name:     "",
+  password: "",
+  account:  "",
+  email:    "",
+  ranks:    "",
+  roleId:   "",  // 1, 2 ó 3
+};
 
 const CreateUser = () => {
   const isNonMobile = useMediaQuery("(min-width:600px)");
-  const theme = useTheme();
-  const colors = Token(theme.palette.mode);
+  const theme       = useTheme();
+  const colors      = Token(theme.palette.mode);
 
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -20,10 +48,12 @@ const CreateUser = () => {
 
   const handleFormSubmit = async (values, { resetForm }) => {
     try {
+      // Forzamos status: 0 (activo)
+      const payload = { ...values, status: 0 };
       const response = await fetch("http://localhost:3000/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -60,7 +90,10 @@ const CreateUser = () => {
 
   return (
     <Box m="20px">
-      <Header title="Crear Usuario" subtitle="Completa el formulario para registrar un nuevo usuario" />
+      <Header
+        title="Crear Usuario"
+        subtitle="Completa el formulario para registrar un nuevo usuario"
+      />
 
       <Box
         m="40px auto"
@@ -71,104 +104,115 @@ const CreateUser = () => {
         sx={{ backgroundColor: colors.primary[400] }}
       >
         <Formik
-          onSubmit={(values, actions) => handleFormSubmit(values, actions)}
+          onSubmit={handleFormSubmit}
           initialValues={initialValues}
           validationSchema={checkoutSchema}
         >
-          {({ values, errors, touched, handleBlur, handleChange, handleSubmit }) => (
+          {({
+            values,
+            errors,
+            touched,
+            handleBlur,
+            handleChange,
+            handleSubmit,
+          }) => (
             <form onSubmit={handleSubmit}>
               <Box
                 display="grid"
                 gap="20px"
                 gridTemplateColumns="repeat(12, 1fr)"
                 sx={{
-                  "& > div": { gridColumn: isNonMobile ? "span 6" : "span 12" },
+                  "& > div": {
+                    gridColumn: isNonMobile ? "span 6" : "span 12",
+                  },
                 }}
               >
                 <TextField
                   fullWidth
                   variant="filled"
-                  type="text"
                   label="Nombre completo"
+                  name="name"
                   onBlur={handleBlur}
                   onChange={handleChange}
                   value={values.name}
-                  name="name"
                   error={!!touched.name && !!errors.name}
                   helperText={touched.name && errors.name}
                 />
+
                 <TextField
                   fullWidth
                   variant="filled"
-                  type="text"
-                  label="Cuenta"
+                  label="Matrícula"
+                  name="account"
                   onBlur={handleBlur}
                   onChange={handleChange}
                   value={values.account}
-                  name="account"
                   error={!!touched.account && !!errors.account}
                   helperText={touched.account && errors.account}
                 />
+
                 <TextField
                   fullWidth
                   variant="filled"
-                  type="email"
                   label="Correo electrónico"
+                  name="email"
                   onBlur={handleBlur}
                   onChange={handleChange}
                   value={values.email}
-                  name="email"
                   error={!!touched.email && !!errors.email}
                   helperText={touched.email && errors.email}
                 />
+
                 <TextField
                   fullWidth
                   variant="filled"
                   type="password"
                   label="Contraseña"
+                  name="password"
                   onBlur={handleBlur}
                   onChange={handleChange}
                   value={values.password}
-                  name="password"
                   error={!!touched.password && !!errors.password}
                   helperText={touched.password && errors.password}
                 />
+
                 <TextField
                   fullWidth
                   variant="filled"
-                  type="text"
                   label="Rango"
+                  name="ranks"
                   onBlur={handleBlur}
                   onChange={handleChange}
                   value={values.ranks}
-                  name="ranks"
                   error={!!touched.ranks && !!errors.ranks}
                   helperText={touched.ranks && errors.ranks}
                 />
-                <TextField
+
+                {/* Select para el rol */}
+                <FormControl
                   fullWidth
                   variant="filled"
-                  type="text"
-                  label="Estado"
-                  onBlur={handleBlur}
-                  onChange={handleChange}
-                  value={values.status}
-                  name="status"
-                  error={!!touched.status && !!errors.status}
-                  helperText={touched.status && errors.status}
-                />
-                <TextField
-                  fullWidth
-                  variant="filled"
-                  type="number"
-                  label="Rol ID"
-                  onBlur={handleBlur}
-                  onChange={handleChange}
-                  value={values.roleId}
-                  name="roleId"
                   error={!!touched.roleId && !!errors.roleId}
-                  helperText={touched.roleId && errors.roleId}
-                />
+                >
+                  <InputLabel id="role-label">Rol</InputLabel>
+                  <Select
+                    labelId="role-label"
+                    label="Rol"
+                    name="roleId"
+                    value={values.roleId}
+                    onBlur={handleBlur}
+                    onChange={handleChange}
+                  >
+                    <MenuItem value={1}>Administrador</MenuItem>
+                    <MenuItem value={2}>Capturista</MenuItem>
+                    <MenuItem value={3}>Consultor</MenuItem>
+                  </Select>
+                  {touched.roleId && errors.roleId && (
+                    <Box mt={1} color="error.main" fontSize="0.75rem">
+                      {errors.roleId}
+                    </Box>
+                  )}
+                </FormControl>
               </Box>
 
               <Box display="flex" justifyContent="flex-end" mt="30px">
@@ -194,26 +238,6 @@ const CreateUser = () => {
       />
     </Box>
   );
-};
-
-const checkoutSchema = yup.object().shape({
-  name: yup.string().required("Requerido"),
-  password: yup.string().required("Requerido").min(8, "Mínimo 8 caracteres"),
-  account: yup.string().required("Requerido"),
-  email: yup.string().email("Correo inválido").required("Requerido"),
-  ranks: yup.string().required("Requerido"),
-  status: yup.string().required("Requerido"),
-  roleId: yup.number().required("Requerido"),
-});
-
-const initialValues = {
-  name: "",
-  password: "",
-  account: "",
-  email: "",
-  ranks: "",
-  status: "",
-  roleId: "",
 };
 
 export default CreateUser;

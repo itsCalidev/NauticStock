@@ -1,5 +1,5 @@
 const Controller = require("./Controller");
-const User = require("../models/User");
+const User = require("../models/user");
 const bcrypt     = require("bcryptjs");
 const jwt        = require("jsonwebtoken");
 const config     = require("../config/config");
@@ -44,34 +44,44 @@ class UserController extends Controller {
     return users;
   }
 
+  async getById(id) {
+    const user = await this.userModel.findById(id);
+    return user;
+  }
+
   async login({ email, password }) {
-    if (!email || !password) {
+    if (!email || !password)
       throw new Error("Email y contraseña son requeridos");
-    }
-
+  
     const user = await this.userModel.findByEmail(email);
-    if (!user) {
-      throw new Error("Usuario no encontrado");
+    if (!user) throw new Error("Usuario no encontrado");
+  
+    // **Aquí** comprobamos su status
+    if (user.status === 1) {
+      throw new Error("Cuenta inactiva. Contacta al administrador.");
     }
-
+  
     const isMatch = bcrypt.compareSync(password, user.password);
-    if (!isMatch) {
-      throw new Error("Contraseña incorrecta");
-    }
+    if (!isMatch) throw new Error("Contraseña incorrecta");
 
-    // Genera token con payload mínimo
+    // 1) Actualiza el último acceso ANTES de generar el token
+    await this.userModel.updateLastAccess(user.id);
+
+    // 2) Genera JWT
     const payload = { id: user.id, name: user.name, roleId: user.roleId };
-    const token   = jwt.sign(payload, config.jwtSecret, { expiresIn: "2h" });
+    const token = jwt.sign(payload, config.jwtSecret, config.jwtOptions);
 
-    // Retornamos token y datos básicos (sin password)
     return {
       token,
       user: {
-        id:    user.id,
-        name:  user.name,
-        email: user.email,
-        roleId: user.roleId
-      }
+        id:     user.id,
+        name:   user.name,
+        email:  user.email,
+        account:  user.account, 
+        ranks:    user.ranks,   
+        roleId: user.roleId,
+        profile_pic: user.profile_pic,
+      },
     };
   }
 }

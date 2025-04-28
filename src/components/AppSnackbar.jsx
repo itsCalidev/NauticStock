@@ -1,8 +1,10 @@
+// components/AppSnackbar.jsx
 import { Snackbar, Alert } from "@mui/material";
 
 const AppSnackbar = ({ open, onClose, message, severity = "success" }) => {
   return (
     <Snackbar
+      key={message}                       // ← aquí!
       open={open}
       autoHideDuration={4000}
       onClose={onClose}
@@ -10,7 +12,7 @@ const AppSnackbar = ({ open, onClose, message, severity = "success" }) => {
     >
       <Alert
         onClose={onClose}
-        severity={severity} // success | warning | error | info
+        severity={severity}
         variant="filled"
         sx={{ width: "100%" }}
       >
