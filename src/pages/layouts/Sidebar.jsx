@@ -1,155 +1,168 @@
-import { useState } from "react";
+// src/pages/layouts/Sidebar.jsx
+import React, { useState, useEffect } from "react";
 import { ProSidebar, Menu, MenuItem } from "react-pro-sidebar";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import "react-pro-sidebar/dist/css/styles.css";
 import { Token } from "../../theme";
-import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import PeopleOutlinedIcon from "@mui/icons-material/PeopleOutlined";
-import InventoryIcon from '@mui/icons-material/Inventory';
-import LocalShippingIcon from '@mui/icons-material/LocalShipping';
-import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
-import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
-import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
-import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
+
+import HomeOutlinedIcon            from "@mui/icons-material/HomeOutlined";
+import PeopleOutlinedIcon          from "@mui/icons-material/PeopleOutlined";
+import InventoryIcon               from "@mui/icons-material/Inventory";
+import LocalShippingIcon           from "@mui/icons-material/LocalShipping";
+import PersonOutlinedIcon          from "@mui/icons-material/PersonOutlined";
+import CalendarTodayOutlinedIcon   from "@mui/icons-material/CalendarTodayOutlined";
+import HelpOutlineOutlinedIcon     from "@mui/icons-material/HelpOutlineOutlined";
+import BarChartOutlinedIcon        from "@mui/icons-material/BarChartOutlined";
 import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
-import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
-import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
-import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
+import TimelineOutlinedIcon        from "@mui/icons-material/TimelineOutlined";
+import MapOutlinedIcon             from "@mui/icons-material/MapOutlined";
+import MenuOutlinedIcon            from "@mui/icons-material/MenuOutlined";
+
+import defaultPic from "../../assets/default.png";
 
 const Item = ({ title, to, icon }) => {
   const theme = useTheme();
   const colors = Token(theme.palette.mode);
-  const location = useLocation();
-  const isActive = location.pathname === to;
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const isActive = pathname === to;
+
   return (
     <MenuItem
-      active={isActive}
-      style={{
-        color: colors.grey[100],
-      }}
       icon={icon}
+      active={isActive}
+      style={{ color: colors.grey[100], textDecoration: "none" }}
+      onClick={() => {
+        console.log(`🔀 Redireccionando a ${to}`);
+        navigate(to);
+      }}
     >
       <Typography>{title}</Typography>
-      <Link to={to} />
     </MenuItem>
   );
 };
 
-const Sidebar = () => {
+export default function Sidebar() {
   const theme = useTheme();
   const colors = Token(theme.palette.mode);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const [user, setUser] = useState({
+    name: "Usuario",
+    profile_pic: null,
+    roleId: null,
+  });
+
+  useEffect(() => {
+    // función para recargar usuario desde localStorage
+    const loadUser = () => {
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        try {
+          setUser(JSON.parse(stored));
+        } catch {}
+      }
+    };
+
+    // carga inicial
+    loadUser();
+
+    // escuchar el evento que disparas en Profile.jsx
+    window.addEventListener("userUpdated", loadUser);
+
+    // limpieza
+    return () => {
+      window.removeEventListener("userUpdated", loadUser);
+    };
+  }, []);
+
+  const isAdmin = user.roleId === 1;
 
   return (
     <Box
       sx={{
-        "& .pro-sidebar-inner": {
-          background: `${colors.primary[400]} !important`,
-        },
-        "& .pro-icon-wrapper": {
-          backgroundColor: "transparent !important",
-        },
-        "& .pro-inner-item": {
-          padding: "5px 35px 5px 20px !important",
-        },
-        "& .pro-inner-item:hover": {
-          color: "#868dfb !important",
-        },
-        "& .pro-menu-item.active": {
-          color: "#6870fa !important",
-        },
+        "& .pro-sidebar-inner":    { background: `${colors.primary[400]} !important` },
+        "& .pro-icon-wrapper":     { backgroundColor: "transparent !important" },
+        "& .pro-inner-item":       { padding: "5px 35px 5px 20px !important" },
+        "& .pro-inner-item:hover": { color: "#868dfb !important" },
+        "& .pro-menu-item.active": { color: "#6870fa !important" },
       }}
     >
-      <ProSidebar collapsed={isCollapsed}>
-        <Menu iconShape="square">
-          <MenuItem
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            icon={isCollapsed ? <MenuOutlinedIcon /> : undefined}
-            style={{
-              margin: "10px 0 20px 0",
-              color: colors.grey[100],
-            }}
+      <ProSidebar collapsed={collapsed}>
+        {/* Toggle Header */}
+        <Box
+          display="flex"
+          justifyContent={collapsed ? "center" : "space-between"}
+          alignItems="center"
+          p="10px 20px"
+        >
+          {!collapsed && (
+            <Typography variant="h3" color={colors.grey[100]}>
+              NauticStock
+            </Typography>
+          )}
+          <IconButton
+            onClick={() => setCollapsed(c => !c)}
+            sx={{ color: colors.grey[100] }}
           >
-            {!isCollapsed && (
-              <Box
-                display="flex"
-                justifyContent="space-between"
-                alignItems="center"
-                ml="15px"
-              >
-                <Typography variant="h3" color={colors.grey[100]}>
-                  NauticStock
-                </Typography>
-                <IconButton onClick={() => setIsCollapsed(!isCollapsed)} aria-label="toggle sidebar">
-                  <MenuOutlinedIcon />
-                </IconButton>
-              </Box>
-            )}
-          </MenuItem>
+            <MenuOutlinedIcon />
+          </IconButton>
+        </Box>
 
-          {!isCollapsed && (
-            <Box mb="25px">
-              <Box display="flex" justifyContent="center" alignItems="center">
-                <img
-                  alt="profile-pic"
-                  width="100px"
-                  height="100px"
-                  src={`../../assets/profile/default.png`}
-                  style={{ cursor: "pointer", borderRadius: "50%" }}
-                />
-              </Box>
-              <Box textAlign="center">
-                <Typography variant="h5" color={colors.greenAccent[500]} marginTop={"10px"}>
-                  Cali Admin
-                </Typography>
-              </Box>
+        <Menu iconShape="square">
+          {/* Profile */}
+          {!collapsed && (
+            <Box mb="25px" textAlign="center">
+              <img
+                src={user.profile_pic || defaultPic}
+                alt="avatar"
+                width={100}
+                height={100}
+                style={{ borderRadius: "50%", objectFit: "cover" }}
+              />
+              <Typography variant="h5" color={colors.greenAccent[500]} mt="10px">
+                {user.name}
+              </Typography>
             </Box>
           )}
 
-          <Box paddingLeft={isCollapsed ? undefined : "10%"}>
-            <Item
-              title="Dashboard"
-              to="/"
-              icon={<HomeOutlinedIcon />}
-            />
+          {/* Menu Sections */}
+          <Box paddingLeft={collapsed ? undefined : "10%"}>
+            <Item title="Dashboard"      to="/"             icon={<HomeOutlinedIcon />} />
 
             <Typography
               variant="h6"
               color={colors.grey[300]}
               sx={{ m: "15px 0 5px 20px" }}
             >
-              Management
+              Administración
             </Typography>
-            <Item
-              title="Equipo de Trabajo"
-              to="/team"
-              icon={<PeopleOutlinedIcon />}
-            />
-            <Item
-              title="Productos" 
-              to="/products"
-              icon={<InventoryIcon />}
-            />
-            <Item
-              title="Proveedores"
-              to="/providers"
-              icon={<LocalShippingIcon />}
-            />
+            {isAdmin && (
+              <Item
+                title="Equipo de Trabajo"
+                to="/team"
+                icon={<PeopleOutlinedIcon />}
+              />
+            )}
+            <Item title="Productos"      to="/products"     icon={<InventoryIcon />} />
+            <Item title="Proveedores"    to="/providers"    icon={<LocalShippingIcon />} />
 
             <Typography
               variant="h6"
               color={colors.grey[300]}
               sx={{ m: "15px 0 5px 20px" }}
             >
-              Pages
+              Páginas
             </Typography>
-            <Item
-              title="Crear Usuario"
-              to="/createUser"
-              icon={<PersonOutlinedIcon />}
-            />
+            {isAdmin && (
+              <Item
+                title="Crear Usuario"
+                to="/createUser"
+                icon={<PersonOutlinedIcon />}
+              />
+            )}
             <Item
               title="Calendario"
               to="/calendar"
@@ -166,33 +179,15 @@ const Sidebar = () => {
               color={colors.grey[300]}
               sx={{ m: "15px 0 5px 20px" }}
             >
-              Charts
+              Gráficos
             </Typography>
-            <Item
-              title="Bar Chart"
-              to="/"
-              icon={<BarChartOutlinedIcon />}
-            />
-            <Item
-              title="Pie Chart"
-              to="/"
-              icon={<PieChartOutlineOutlinedIcon />}
-            />
-            <Item
-              title="Line Chart"
-              to="/"
-              icon={<TimelineOutlinedIcon />}
-            />
-            <Item
-              title="Geography Chart"
-              to="/"
-              icon={<MapOutlinedIcon />}
-            />
+            <Item title="Bar Chart"     to="/bar"          icon={<BarChartOutlinedIcon />} />
+            <Item title="Pie Chart"     to="/pie"          icon={<PieChartOutlineOutlinedIcon />} />
+            <Item title="Line Chart"    to="/line"         icon={<TimelineOutlinedIcon />} />
+            <Item title="Geography"     to="/geography"    icon={<MapOutlinedIcon />} />
           </Box>
         </Menu>
       </ProSidebar>
     </Box>
   );
-};
-
-export default Sidebar;
+}

@@ -106,6 +106,7 @@ class DB {
     const sql = `UPDATE ${this.table} SET ${fields} WHERE ${this.wheres}`;
     const conn = await this.connect();
     const [result] = await conn.execute(sql, [...values, ...this.values]);
+    this.reset();
     return result.affectedRows;
   }
 
@@ -113,6 +114,7 @@ class DB {
     const sql = `DELETE FROM ${this.table} WHERE ${this.wheres}`;
     const conn = await this.connect();
     const [result] = await conn.execute(sql, this.values);
+    this.reset();
     return result.affectedRows;
   }
 }

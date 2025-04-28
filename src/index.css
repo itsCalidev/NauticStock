@@ -1,29 +1,39 @@
 @import url("https://fonts.googleapis.com/css2?family=Roboto:wght@100..900&display=swap");
 
+/* 1) html, body y #root al 100% */
 html,
-body #root .app .content {
+body,
+#root {
   height: 100%;
-  width: 100%;
+  margin: 0;
+  padding: 0;
   font-family: "Roboto", sans-serif;
 }
 
+/* 2) Contenedor principal flex full-height */
 .app {
   display: flex;
-  position: relative;
+  height: 100%;
+  width: 100%;
 }
 
+/* 3) El contenido derecho ocupa el espacio restante y hace scroll */
+.content {
+  flex: 1;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* 4) Scrollbar personalizado */
 ::-webkit-scrollbar {
   width: 10px;
 }
-
 ::-webkit-scrollbar-track {
   background: #e0e0e0;
 }
-
 ::-webkit-scrollbar-thumb {
   background: #888;
 }
-
-::-webkit-scrollbar-track:hover {
+::-webkit-scrollbar-thumb:hover {
   background: #555;
 }

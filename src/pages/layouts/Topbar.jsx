@@ -11,7 +11,8 @@ import PersonOutlinedIcon     from "@mui/icons-material/PersonOutlined";
 import LogoutIcon             from "@mui/icons-material/Logout";
 import SearchIcon             from "@mui/icons-material/Search";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import axios                  from "axios";
+import axios from "../../api/axiosClient";
+
 
 
 const Topbar = () => {
