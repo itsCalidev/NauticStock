@@ -11,13 +11,63 @@ class DB {
     this.group = "";
     this.limitVal = "";
     this.values = [];
+    this.connection = null; // 👈 AGREGAR PROPIEDAD
   }
 
   async connect() {
-    if (!this.connection) {
-      this.connection = await mysql.createConnection(dbConfig);
+    try {
+      if (!this.connection) {
+        console.log('🔌 Connecting to database...');
+        this.connection = await mysql.createConnection(dbConfig);
+        console.log('✅ Database connected successfully');
+      }
+      return this.connection;
+    } catch (err) {
+      console.error('❌ Database connection failed:', err);
+      throw err;
     }
-    return this.connection;
+  }  // 👇 MÉTODO MEJORADO: executeQuery -> execute (compatible con History.js)
+  async execute(sql, params = []) {
+    try {
+      console.log('📊 Executing query:', sql);
+      if (params.length > 0) {
+        console.log('📊 With parameters:', params);
+      }
+
+      const conn = await this.connect();
+      const [result, fields] = await conn.execute(sql, params);
+      
+      console.log('✅ Query executed successfully');
+      console.log('✅ Raw result type:', typeof result);
+      console.log('✅ Raw result is array:', Array.isArray(result));
+      console.log('✅ Raw result length:', result?.length);
+      console.log('✅ Raw result first item:', result?.[0]);
+      console.log('✅ Fields info:', fields?.length, 'fields');
+      
+      // 🎯 DEVOLVER DIRECTAMENTE EL ARRAY DE RESULTADOS
+      return result;
+      
+    } catch (error) {
+      console.error("❌ Error en execute:", error);
+      console.error("❌ Query was:", sql);
+      console.error("❌ Parameters were:", params);
+      
+      // 👇 NUEVO: Intentar reconectar si es error de conexión
+      if (error.code === 'PROTOCOL_CONNECTION_LOST' || error.code === 'ECONNRESET') {
+        console.log('🔄 Connection lost, attempting to reconnect...');
+        this.connection = null; // Reset connection
+        const conn = await this.connect();
+        const [result] = await conn.execute(sql, params);
+        return result;
+      }
+      
+      throw error;
+    }
+  }
+
+  // 👇 ALIAS PARA COMPATIBILIDAD (puedes usar ambos nombres)
+  async executeQuery(sql, params = []) {
+    return this.execute(sql, params);
   }
 
   select(fields = ["*"]) {
@@ -87,35 +137,68 @@ class DB {
   }
 
   async insert(data) {
-    const fields = Object.keys(data).join(", ");
-    const placeholders = Object.keys(data)
-      .map(() => "?")
-      .join(", ");
-    const values = Object.values(data);
-    const sql = `INSERT INTO ${this.table} (${fields}) VALUES (${placeholders})`;
-    const conn = await this.connect();
-    const [result] = await conn.execute(sql, values);
-    return result.insertId;
+    try {
+      const fields = Object.keys(data).join(", ");
+      const placeholders = Object.keys(data)
+        .map(() => "?")
+        .join(", ");
+      const values = Object.values(data);
+      const sql = `INSERT INTO ${this.table} (${fields}) VALUES (${placeholders})`;
+      
+      console.log('📝 Inserting into:', this.table);
+      const conn = await this.connect();
+      const [result] = await conn.execute(sql, values);
+      
+      console.log('✅ Insert successful, ID:', result.insertId);
+      return result.insertId;
+    } catch (error) {
+      console.error("❌ Error en insert:", error);
+      throw error;
+    }
   }
 
   async update(data) {
-    const fields = Object.keys(data)
-      .map((key) => `${key} = ?`)
-      .join(", ");
-    const values = Object.values(data);
-    const sql = `UPDATE ${this.table} SET ${fields} WHERE ${this.wheres}`;
-    const conn = await this.connect();
-    const [result] = await conn.execute(sql, [...values, ...this.values]);
-    this.reset();
-    return result.affectedRows;
+    try {
+      const fields = Object.keys(data)
+        .map((key) => `${key} = ?`)
+        .join(", ");
+      const values = Object.values(data);
+      const sql = `UPDATE ${this.table} SET ${fields} WHERE ${this.wheres}`;
+      
+      const conn = await this.connect();
+      const [result] = await conn.execute(sql, [...values, ...this.values]);
+      this.reset();
+      
+      console.log('✅ Update successful, affected rows:', result.affectedRows);
+      return result.affectedRows;
+    } catch (error) {
+      console.error("❌ Error en update:", error);
+      throw error;
+    }
   }
 
   async delete() {
-    const sql = `DELETE FROM ${this.table} WHERE ${this.wheres}`;
-    const conn = await this.connect();
-    const [result] = await conn.execute(sql, this.values);
-    this.reset();
-    return result.affectedRows;
+    try {
+      const sql = `DELETE FROM ${this.table} WHERE ${this.wheres}`;
+      const conn = await this.connect();
+      const [result] = await conn.execute(sql, this.values);
+      this.reset();
+      
+      console.log('🗑️ Delete successful, affected rows:', result.affectedRows);
+      return result.affectedRows;
+    } catch (error) {
+      console.error("❌ Error en delete:", error);
+      throw error;
+    }
+  }
+
+  // 👇 NUEVO: Método para cerrar conexión
+  async close() {
+    if (this.connection) {
+      await this.connection.end();
+      this.connection = null;
+      console.log('🔌 Database connection closed');
+    }
   }
 }
 

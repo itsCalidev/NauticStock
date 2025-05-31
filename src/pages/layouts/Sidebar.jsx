@@ -19,6 +19,10 @@ import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutl
 import TimelineOutlinedIcon        from "@mui/icons-material/TimelineOutlined";
 import MapOutlinedIcon             from "@mui/icons-material/MapOutlined";
 import MenuOutlinedIcon            from "@mui/icons-material/MenuOutlined";
+import HistoryOutlinedIcon         from "@mui/icons-material/HistoryOutlined";
+import AddIcon                     from "@mui/icons-material/Add"; // 👈 NUEVO ICONO
+import CategoryIcon                from "@mui/icons-material/Category";
+import LocationOnIcon              from "@mui/icons-material/LocationOn";
 
 import defaultPic from "../../assets/default.png";
 
@@ -29,15 +33,24 @@ const Item = ({ title, to, icon }) => {
   const navigate = useNavigate();
   const isActive = pathname === to;
 
+  const handleClick = () => {
+    try {
+      console.log(`🔀 Redireccionando a ${to}`);
+      // Verificar que la ruta es válida antes de navegar
+      if (to && typeof to === 'string') {
+        navigate(to);
+      }
+    } catch (error) {
+      console.error('Error al navegar:', error);
+    }
+  };
+
   return (
     <MenuItem
       icon={icon}
       active={isActive}
       style={{ color: colors.grey[100], textDecoration: "none" }}
-      onClick={() => {
-        console.log(`🔀 Redireccionando a ${to}`);
-        navigate(to);
-      }}
+      onClick={handleClick}
     >
       <Typography>{title}</Typography>
     </MenuItem>
@@ -148,6 +161,13 @@ export default function Sidebar() {
             )}
             <Item title="Productos"      to="/products"     icon={<InventoryIcon />} />
             <Item title="Proveedores"    to="/providers"    icon={<LocalShippingIcon />} />
+            {isAdmin && (
+              <Item
+                title="Historial"
+                to="/history"
+                icon={<HistoryOutlinedIcon />}
+              />
+            )}
 
             <Typography
               variant="h6"
@@ -161,6 +181,29 @@ export default function Sidebar() {
                 title="Crear Usuario"
                 to="/createUser"
                 icon={<PersonOutlinedIcon />}
+              />
+            )}            {/* 👇 NUEVO: Crear Producto - Solo para admins */}
+            {isAdmin && (
+              <Item
+                title="Crear Producto"
+                to="/createProduct"
+                icon={<AddIcon />}
+              />
+            )}
+            {/* 👇 NUEVO: Gestión de Categorías - Solo para admins */}
+            {isAdmin && (
+              <Item
+                title="Categorías"
+                to="/categories"
+                icon={<CategoryIcon />}
+              />
+            )}
+            {/* 👇 NUEVO: Gestión de Ubicaciones - Solo para admins */}
+            {isAdmin && (
+              <Item
+                title="Ubicaciones"
+                to="/locations"
+                icon={<LocationOnIcon />}
               />
             )}
             <Item

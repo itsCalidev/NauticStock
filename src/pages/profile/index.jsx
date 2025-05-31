@@ -1,6 +1,6 @@
 // src/pages/profile/index.jsx
 import React, { useEffect, useState, useRef } from "react";
-import axios from "../../api/axiosClient";
+import api from "../../api/axiosClient";
 
 import {
   Box,
@@ -89,7 +89,7 @@ const Profile = () => {
     try {
       const form = new FormData();
       form.append("avatar", avatarFile);
-      const { data } = await axios.post(
+      const { data } = await api.post(
         `/users/${user.id}/avatar`,
         form,
         { headers: { "Content-Type": "multipart/form-data" } }
@@ -108,31 +108,32 @@ const Profile = () => {
     }
   };
 
-  const handlePasswordSubmit = async values => {
-    if (!values.password || !values.confirm_password) {
-      showSnackbar("Por favor ingresa y confirma la contraseña.", "warning");
-      return;
-    }
-    if (values.password !== values.confirm_password) {
-      showSnackbar("Las contraseñas no coinciden.", "error");
-      return;
-    }
-    try {
-      await axios.put(`/users/${user.id}`, { password: values.password });
-      showSnackbar(
-        "La contraseña ha sido actualizada. Por razones de seguridad se cerrará la sesión.",
-        "info"
-      );
-      setTimeout(() => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        delete axios.defaults.headers.common["Authorization"];
-        navigate("/login", { replace: true });
-      }, 3500);
-    } catch (err) {
-      showSnackbar(err.response?.data?.error || "Error al actualizar.", "error");
-    }
-  };
+const handlePasswordSubmit = async values => {
+  if (!values.password || !values.confirm_password) {
+    showSnackbar("Por favor ingresa y confirma la contraseña.", "warning");
+    return;
+  }
+  if (values.password !== values.confirm_password) {
+    showSnackbar("Las contraseñas no coinciden.", "error");
+    return;
+  }
+  try {
+    // 👇 CAMBIAR LA RUTA: usar /api/users/me/password en lugar de /users/${user.id}
+    await api.put(`/api/users/me/password`, { password: values.password });
+    showSnackbar(
+      "La contraseña ha sido actualizada. Por razones de seguridad se cerrará la sesión.",
+      "info"
+    );
+    setTimeout(() => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      delete api.defaults.headers.common["Authorization"];
+      navigate("/login", { replace: true });
+    }, 3500);
+  } catch (err) {
+    showSnackbar(err.response?.data?.error || "Error al actualizar.", "error");
+  }
+};
 
   if (!initialValues) return null;
 

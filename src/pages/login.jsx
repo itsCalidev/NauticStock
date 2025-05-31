@@ -1,6 +1,6 @@
 // pages/login.jsx
 import React, { useState, useContext } from "react";
-import axios from "../api/axiosClient";
+import api from "../api/axiosClient";
 import { useNavigate } from "react-router-dom";
 import {
   Box,
@@ -46,12 +46,12 @@ const Login = () => {
     }
 
     try {
-      const { data } = await axios.post("/login", { email, password });
+      const { data } = await api.post("/login", { email, password });
       // guardar token y datos del usuario
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       // configurar axios para enviar el token en futuras peticiones
-      axios.defaults.headers.common[
+      api.defaults.headers.common[
         "Authorization"
       ] = `Bearer ${data.token}`;
 
@@ -220,42 +220,39 @@ const Login = () => {
 
       {/* Panel derecho - Imagen y logo */}
       <Box
-        sx={{
-          flex: 1,
-          backgroundColor: isDark ? "#fff" : "#1f1f1f",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "space-between",
-          transition: "background-color 0.3s",
-          p: 4,
-        }}
-      >
-        <Box mt={4}>
-          <Box
-            component="img"
-            src={LogoImage}
-            alt="logo"
-            sx={{
-              width: "300px",
-              objectFit: "contain",
-            }}
-          />
-        </Box>
-        <Box>
-          <Box
-            component="img"
-            src={LoginImage}
-            alt="escudo"
-            sx={{
-              maxWidth: "60%",
-              height: "auto",
-              filter: isDark ? "grayscale(0.2)" : "none",
-            }}
-          />
-        </Box>
-        <Box height="40px" />
-      </Box>
+  sx={{
+    flex: 1,
+    backgroundColor: isDark ? "#fff" : "#1f1f1f",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",  
+    transition: "background-color 0.3s",
+    p: 4,
+    gap: 8,                   
+  }}
+>
+  <Box
+    component="img"
+    src={LogoImage}
+    alt="logo"
+    sx={{
+      width: "300px",
+      objectFit: "contain",
+    }}
+  />
+  <Box
+    component="img"
+    src={LoginImage}
+    alt="escudo"
+    sx={{
+      maxWidth: "50%",
+      height: "auto",
+      filter: isDark ? "grayscale(0.2)" : "none",
+    }}
+  />
+</Box>
+
 
       <AccessibilitySidebar />
 
