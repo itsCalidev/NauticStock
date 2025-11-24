@@ -1,16 +1,25 @@
 // app/routes/authRoutes.js
-const express        = require('express');
-const router         = express.Router();
+const express = require('express');
+const router = express.Router();
 const UserController = require('../controllers/userController');
-const userCtrl       = new UserController();
+const userCtrl = new UserController();
 
 // POST /login
 router.post('/login', async (req, res, next) => {
   try {
     const { token, user } = await userCtrl.login(req.body);
-    res.json({ token, user });
+
+    // 👇 FORMATO ESTÁNDAR
+    res.json({
+      success: true,
+      data: { token, user }
+    });
   } catch (err) {
-    res.status(401).json({ error: err.message });
+    // 👇 FORMATO ESTÁNDAR DE ERROR
+    res.status(401).json({
+      success: false,
+      error: err.message
+    });
   }
 });
 

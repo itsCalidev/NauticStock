@@ -1,37 +1,46 @@
+
 const Model = require('./Model');
 
 class Products extends Model {
   constructor() {
     super(); // 👈 Llamar constructor padre
     this.tableName = "products"; // 👈 DEFINIR ANTES de usar DB
-    
+
     // 👇 INICIALIZAR DB DESPUÉS de definir tableName
     this.initializeDB();
   }
 
   async getAllProducts() {
     try {
-      // 👇 USAR EXECUTE DIRECTO PARA QUERIES COMPLEJAS
+      // 👇 USAR EXECUTE DIRECTO PARA QUERIES COMPLEJAS CON JOINS
       const query = `
-        SELECT 
-          id,
-          part_number,
-          description,
-          brand,
-          category,
-          quantity,
-          min_stock,
-          max_stock,
-          price,
-          location,
-          supplier,
-          status,
-          created_at,
-          updated_at
-        FROM products 
-        ORDER BY created_at DESC
-      `;
-      
+SELECT
+p.id,
+  p.part_number,
+  p.description,
+  b.name as brand,
+  c.name as category,
+  p.quantity,
+  p.min_stock,
+  p.max_stock,
+  p.price,
+  l.name as location,
+  pr.name as supplier,
+  p.status,
+  p.created_at,
+  p.updated_at,
+  p.brand_id,
+  p.category_id,
+  p.location_id,
+  p.provider_id
+        FROM products p
+        LEFT JOIN brands b ON p.brand_id = b.id
+        LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN locations l ON p.location_id = l.id
+        LEFT JOIN provider pr ON p.provider_id = pr.id
+        ORDER BY p.created_at DESC
+  `;
+
       const products = await this.execute(query);
       console.log('Modelo: Productos obtenidos desde DB:', products.length);
       return products;
@@ -59,14 +68,14 @@ class Products extends Model {
       const insertData = {
         part_number: data.part_number,
         description: data.description,
-        brand: data.brand,
-        category: data.category,
+        brand_id: data.brand_id || null, // 👈 Usar IDs o null
+        category_id: data.category_id || null,
         quantity: data.quantity || 0,
         min_stock: data.min_stock || 0,
         max_stock: data.max_stock || 0,
         price: data.price || 0,
-        location: data.location,
-        supplier: data.supplier,
+        location_id: data.location_id || null,
+        provider_id: data.provider_id || null,
         status: data.status || 0
       };
 
@@ -83,11 +92,11 @@ class Products extends Model {
     try {
       // Filtrar solo los campos que se pueden actualizar
       const updateData = {};
-      
+
       const allowedFields = [
-        'part_number', 'description', 'brand', 'category',
+        'part_number', 'description', 'brand_id', 'category_id',
         'quantity', 'min_stock', 'max_stock', 'price',
-        'location', 'supplier', 'status'
+        'location_id', 'provider_id', 'status'
       ];
 
       allowedFields.forEach(field => {
@@ -103,7 +112,7 @@ class Products extends Model {
       const result = await this.getDB()
         .where([['id', id]])
         .update(updateData);
-      
+
       console.log('Producto actualizado exitosamente:', result);
       return result;
     } catch (error) {
@@ -118,7 +127,7 @@ class Products extends Model {
       const result = await this.getDB()
         .where([['id', id]])
         .delete();
-      
+
       console.log('Producto eliminado exitosamente:', result);
       return result;
     } catch (error) {
@@ -133,32 +142,51 @@ class Products extends Model {
 
       // Construir filtros dinámicos
       if (filters.part_number) {
-        whereConditions.push(['part_number', `%${filters.part_number}%`, 'LIKE']);
+        whereConditions.push(['p.part_number', `% ${filters.part_number}% `, 'LIKE']);
       }
 
-      if (filters.category) {
-        whereConditions.push(['category', filters.category]);
+      // Filtros por ID si se proporcionan, o por nombre si es necesario (aquí asumimos IDs para simplificar o nombres si se hace join)
+      // Para mantener compatibilidad con frontend que envía IDs:
+      if (filters.category_id) {
+        whereConditions.push(['p.category_id', filters.category_id]);
       }
 
-      if (filters.brand) {
-        whereConditions.push(['brand', `%${filters.brand}%`, 'LIKE']);
+      if (filters.brand_id) {
+        whereConditions.push(['p.brand_id', filters.brand_id]);
       }
 
       if (filters.status !== undefined) {
-        whereConditions.push(['status', filters.status]);
+        whereConditions.push(['p.status', filters.status]);
       }
 
-      // 👇 USAR QUERY BUILDER
-      let query = this.select();
-      
+      // 👇 Query manual para incluir Joins en búsqueda
+      let sql = `
+SELECT
+p.*,
+  b.name as brand,
+  c.name as category,
+  l.name as location,
+  pr.name as supplier
+        FROM products p
+        LEFT JOIN brands b ON p.brand_id = b.id
+        LEFT JOIN categories c ON p.category_id = c.id
+        LEFT JOIN locations l ON p.location_id = l.id
+        LEFT JOIN provider pr ON p.provider_id = pr.id
+  `;
+
       if (whereConditions.length > 0) {
-        query = query.where(whereConditions);
+        const clauses = whereConditions.map(cond => {
+          if (cond.length === 2) return `${cond[0]} = '${cond[1]}'`;
+          if (cond[2] === 'LIKE') return `${cond[0]} LIKE '${cond[1]}'`;
+          return `${cond[0]} = '${cond[1]}'`;
+        });
+        sql += ` WHERE ${clauses.join(' AND ')} `;
       }
 
-      const products = await query
-        .orderBy([['created_at', 'DESC']])
-        .get();
-      
+      sql += ` ORDER BY p.created_at DESC`;
+
+      const products = await this.execute(sql);
+
       return products;
     } catch (error) {
       console.error('Error en searchProducts:', error);

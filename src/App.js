@@ -1,5 +1,5 @@
-import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { CssBaseline, ThemeProvider } from "@mui/material";
 import { ColorModeContext, useMode } from "./theme";
 import { SearchProvider } from './contexts/SearchContext';
@@ -14,16 +14,29 @@ import Team from "./pages/team";
 import Products from "./pages/products";
 import Providers from "./pages/providers";
 import Profile from "./pages/profile";
-import CreateUser from "./pages/createUser";
-import EditUser from "./pages/editUser";
-import History    from "./pages/history";
-import CreateProduct from "./pages/createProduct";
-import EditProduct from "./pages/editProduct";
+import History from "./pages/history";
 import Categories from "./pages/categories";
 import Locations from "./pages/locations";
+import Brands from "./pages/brands";
+import Ranks from "./pages/ranks";
+import Faq from "./pages/faq";
+import Roles from "./pages/roles";
 
 export default function App() {
   const [theme, ColorMode] = useMode();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      navigate("/login");
+    };
+
+    window.addEventListener("auth:session-expired", handleSessionExpired);
+
+    return () => {
+      window.removeEventListener("auth:session-expired", handleSessionExpired);
+    };
+  }, [navigate]);
 
   return (
     <ColorModeContext.Provider value={ColorMode}>
@@ -53,6 +66,7 @@ export default function App() {
               <Route path="products" element={<Products />} />
               <Route path="providers" element={<Providers />} />
               <Route path="profile" element={<Profile />} />
+              <Route path="faq" element={<Faq />} />
 
               {/* Solo administradores */}
               <Route
@@ -64,41 +78,10 @@ export default function App() {
                 }
               />
               <Route
-                path="createUser"
-                element={
-                  <AdminRoute>
-                    <CreateUser />
-                  </AdminRoute>
-                }
-              />
-              <Route
-                path="users/:id/edit"
-                element={
-                  <AdminRoute>
-                    <EditUser />
-                  </AdminRoute>
-                }
-              />
-              <Route
                 path="history"
                 element={
                   <AdminRoute>
                     <History />
-                  </AdminRoute>
-                }
-              />
-              <Route 
-                path="createProduct" 
-                element={
-                  <AdminRoute>
-                    <CreateProduct />
-                  </AdminRoute>
-                }
-              />              <Route
-                path="products/:id/edit"
-                element={
-                  <AdminRoute>
-                    <EditProduct />
                   </AdminRoute>
                 }
               />
@@ -115,6 +98,30 @@ export default function App() {
                 element={
                   <AdminRoute>
                     <Locations />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="brands"
+                element={
+                  <AdminRoute>
+                    <Brands />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="ranks"
+                element={
+                  <AdminRoute>
+                    <Ranks />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="roles"
+                element={
+                  <AdminRoute>
+                    <Roles />
                   </AdminRoute>
                 }
               />

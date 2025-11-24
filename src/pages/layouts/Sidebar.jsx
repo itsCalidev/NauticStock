@@ -1,4 +1,3 @@
-// src/pages/layouts/Sidebar.jsx
 import React, { useState, useEffect } from "react";
 import { ProSidebar, Menu, MenuItem } from "react-pro-sidebar";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
@@ -7,22 +6,23 @@ import { useLocation, useNavigate } from "react-router-dom";
 import "react-pro-sidebar/dist/css/styles.css";
 import { Token } from "../../theme";
 
-import HomeOutlinedIcon            from "@mui/icons-material/HomeOutlined";
-import PeopleOutlinedIcon          from "@mui/icons-material/PeopleOutlined";
-import InventoryIcon               from "@mui/icons-material/Inventory";
-import LocalShippingIcon           from "@mui/icons-material/LocalShipping";
-import PersonOutlinedIcon          from "@mui/icons-material/PersonOutlined";
-import CalendarTodayOutlinedIcon   from "@mui/icons-material/CalendarTodayOutlined";
-import HelpOutlineOutlinedIcon     from "@mui/icons-material/HelpOutlineOutlined";
-import BarChartOutlinedIcon        from "@mui/icons-material/BarChartOutlined";
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
+import PeopleOutlinedIcon from "@mui/icons-material/PeopleOutlined";
+import InventoryIcon from "@mui/icons-material/Inventory";
+import LocalShippingIcon from "@mui/icons-material/LocalShipping";
+import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
+import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
-import TimelineOutlinedIcon        from "@mui/icons-material/TimelineOutlined";
-import MapOutlinedIcon             from "@mui/icons-material/MapOutlined";
-import MenuOutlinedIcon            from "@mui/icons-material/MenuOutlined";
-import HistoryOutlinedIcon         from "@mui/icons-material/HistoryOutlined";
-import AddIcon                     from "@mui/icons-material/Add"; // 👈 NUEVO ICONO
-import CategoryIcon                from "@mui/icons-material/Category";
-import LocationOnIcon              from "@mui/icons-material/LocationOn";
+import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
+import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
+import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
+import GradeIcon from "@mui/icons-material/Grade";
+import CategoryIcon from "@mui/icons-material/Category";
+import PlaceIcon from "@mui/icons-material/Place";
+import SellIcon from "@mui/icons-material/Sell";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import SecurityIcon from "@mui/icons-material/Security";
 
 import defaultPic from "../../assets/default.png";
 
@@ -35,7 +35,6 @@ const Item = ({ title, to, icon }) => {
 
   const handleClick = () => {
     try {
-      console.log(`🔀 Redireccionando a ${to}`);
       // Verificar que la ruta es válida antes de navegar
       if (to && typeof to === 'string') {
         navigate(to);
@@ -75,7 +74,7 @@ export default function Sidebar() {
       if (stored) {
         try {
           setUser(JSON.parse(stored));
-        } catch {}
+        } catch { }
       }
     };
 
@@ -96,9 +95,9 @@ export default function Sidebar() {
   return (
     <Box
       sx={{
-        "& .pro-sidebar-inner":    { background: `${colors.primary[400]} !important` },
-        "& .pro-icon-wrapper":     { backgroundColor: "transparent !important" },
-        "& .pro-inner-item":       { padding: "5px 35px 5px 20px !important" },
+        "& .pro-sidebar-inner": { background: `${colors.primary[400]} !important` },
+        "& .pro-icon-wrapper": { backgroundColor: "transparent !important" },
+        "& .pro-inner-item": { padding: "5px 35px 5px 20px !important" },
         "& .pro-inner-item:hover": { color: "#868dfb !important" },
         "& .pro-menu-item.active": { color: "#6870fa !important" },
       }}
@@ -143,7 +142,7 @@ export default function Sidebar() {
 
           {/* Menu Sections */}
           <Box paddingLeft={collapsed ? undefined : "10%"}>
-            <Item title="Dashboard"      to="/"             icon={<HomeOutlinedIcon />} />
+            <Item title="Dashboard" to="/" icon={<HomeOutlinedIcon />} />
 
             <Typography
               variant="h6"
@@ -159,53 +158,44 @@ export default function Sidebar() {
                 icon={<PeopleOutlinedIcon />}
               />
             )}
-            <Item title="Productos"      to="/products"     icon={<InventoryIcon />} />
-            <Item title="Proveedores"    to="/providers"    icon={<LocalShippingIcon />} />
+            <Item title="Productos" to="/products" icon={<InventoryIcon />} />
+            <Item title="Proveedores" to="/providers" icon={<LocalShippingIcon />} />
+
             {isAdmin && (
-              <Item
-                title="Historial"
-                to="/history"
-                icon={<HistoryOutlinedIcon />}
-              />
+              <>
+                <Item
+                  title="Categorías"
+                  to="/categories"
+                  icon={<CategoryIcon />}
+                />
+                <Item
+                  title="Marcas"
+                  to="/brands"
+                  icon={<SellIcon />}
+                />
+                <Item
+                  title="Ubicaciones"
+                  to="/locations"
+                  icon={<PlaceIcon />}
+                />
+                <Item
+                  title="Rangos"
+                  to="/ranks"
+                  icon={<GradeIcon />}
+                />
+                <Item
+                  title="Roles y Permisos"
+                  to="/roles"
+                  icon={<SecurityIcon />}
+                />
+                <Item
+                  title="Historial"
+                  to="/history"
+                  icon={<HistoryOutlinedIcon />}
+                />
+              </>
             )}
 
-            <Typography
-              variant="h6"
-              color={colors.grey[300]}
-              sx={{ m: "15px 0 5px 20px" }}
-            >
-              Páginas
-            </Typography>
-            {isAdmin && (
-              <Item
-                title="Crear Usuario"
-                to="/createUser"
-                icon={<PersonOutlinedIcon />}
-              />
-            )}            {/* 👇 NUEVO: Crear Producto - Solo para admins */}
-            {isAdmin && (
-              <Item
-                title="Crear Producto"
-                to="/createProduct"
-                icon={<AddIcon />}
-              />
-            )}
-            {/* 👇 NUEVO: Gestión de Categorías - Solo para admins */}
-            {isAdmin && (
-              <Item
-                title="Categorías"
-                to="/categories"
-                icon={<CategoryIcon />}
-              />
-            )}
-            {/* 👇 NUEVO: Gestión de Ubicaciones - Solo para admins */}
-            {isAdmin && (
-              <Item
-                title="Ubicaciones"
-                to="/locations"
-                icon={<LocationOnIcon />}
-              />
-            )}
             <Item
               title="Calendario"
               to="/calendar"
@@ -224,10 +214,10 @@ export default function Sidebar() {
             >
               Gráficos
             </Typography>
-            <Item title="Bar Chart"     to="/bar"          icon={<BarChartOutlinedIcon />} />
-            <Item title="Pie Chart"     to="/pie"          icon={<PieChartOutlineOutlinedIcon />} />
-            <Item title="Line Chart"    to="/line"         icon={<TimelineOutlinedIcon />} />
-            <Item title="Geography"     to="/geography"    icon={<MapOutlinedIcon />} />
+            <Item title="Bar Chart" to="/bar" icon={<BarChartOutlinedIcon />} />
+            <Item title="Pie Chart" to="/pie" icon={<PieChartOutlineOutlinedIcon />} />
+            <Item title="Line Chart" to="/line" icon={<TimelineOutlinedIcon />} />
+            <Item title="Geography" to="/geography" icon={<MapOutlinedIcon />} />
           </Box>
         </Menu>
       </ProSidebar>

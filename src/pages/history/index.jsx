@@ -1,545 +1,313 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Box, CircularProgress, Alert } from '@mui/material';
-import { DataGrid, GridToolbar } from '@mui/x-data-grid';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+    Box,
+    CircularProgress,
+    Alert,
+    Paper,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Typography
+} from '@mui/material';
 import { useTheme } from "@mui/material";
 import { Token } from "../../theme";
 import api from '../../api/axiosClient';
 import Header from '../../components/Header';
-import { useSearch } from '../../contexts/SearchContext'; // 👈 NUEVO IMPORT
-import SearchHighlighter from '../../components/SearchHighlighter'; // 👈 NUEVO IMPORT
+import { useSearch } from '../../contexts/SearchContext';
+import SearchHighlighter from '../../components/SearchHighlighter';
 
 const POLL_INTERVAL = 5000; // ms
 
 const History = () => {
-  const theme = useTheme();
-  const colors = Token(theme.palette.mode);
-  
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+    const theme = useTheme();
+    // Memoizar colors para evitar re-renders innecesarios
+    const colors = useMemo(() => Token(theme.palette.mode), [theme.palette.mode]);
 
-  // 👇 NUEVO: Contexto de búsqueda
-  const { searchTerm, isSearching } = useSearch();
+    const [rows, setRows] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
 
-  // Manejo seguro de colores con fallbacks
-  const safeColors = colors || {
-    primary: { 400: '#f5f5f5', 300: '#424242' },
-    greenAccent: { 300: '#4caf50', 200: '#4caf50' },
-    blueAccent: { 700: '#1976d2' },
-    grey: { 100: '#f5f5f5', 100: '#ffffff' }
-  };
-  
+    // Contexto de búsqueda
+    const { searchTerm, isSearching } = useSearch();
 
-  // 👇 CORREGIR el filteredRows useMemo
-const filteredRows = useMemo(() => {
-  if (!isSearching || !searchTerm) {
-    return rows;
-  }
-  
-  return rows.filter(row => 
-    (row.accion && row.accion.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (row.quien && row.quien.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (row.objetivo && row.objetivo.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (row.descripcion && row.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (row.fecha && row.fecha.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-}, [rows, isSearching, searchTerm]);
+    // Manejo seguro de colores con fallbacks
+    const safeColors = useMemo(() => colors || {
+        primary: { 400: '#f5f5f5', 300: '#424242' },
+        greenAccent: { 300: '#4caf50', 200: '#4caf50' },
+        blueAccent: { 700: '#1976d2' },
+        grey: { 100: '#f5f5f5' }
+    }, [colors]);
 
-  // Verificar autenticación y permisos al montar
-  useEffect(() => {
-    const checkAuth = () => {
-      const token = localStorage.getItem("token");
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
-      
-      console.log('History: Verificando auth...', { token: !!token, user });
-      
-      if (!token) {
-        setError("No se encontró token de autenticación");
-        setLoading(false);
-        return;
-      }
-      
-      if (!user || !user.id) {
-        setError("No se encontró información de usuario");
-        setLoading(false);
-        return;
-      }
-      
-      // Verificar si es admin (roleId === 1)
-      if (user.roleId !== 1) {
-        setError("No tienes permisos para ver el historial (solo administradores)");
-        setLoading(false);
-        return;
-      }
-      
-      setIsAuthenticated(true);
-      setIsAdmin(true);
-    };
-    
-    // Verificar inmediatamente
-    checkAuth();
-    
-    // Si no está autenticado, reintentamos después de un momento
-    const timeoutId = setTimeout(checkAuth, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, []);
 
- const fetchLogs = async () => {
-    if (!isAuthenticated || !isAdmin) {
-      console.log('History: No autenticado o no es admin, saltando fetchLogs');
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('History: Obteniendo historial...');
-      const response = await api.get('/api/history');
-      console.log('History: Respuesta completa:', response);
-      console.log('History: Tipo de response.data:', typeof response.data);
-      console.log('History: Es array response.data:', Array.isArray(response.data));
-      
-      // 👇 VERIFICAR QUE LA RESPUESTA SEA UN ARRAY
-      let dataArray = [];
-      if (Array.isArray(response.data)) {
-        dataArray = response.data;
-      } else if (response.data && Array.isArray(response.data.data)) {
-        // Si viene envuelto en un objeto con propiedad data
-        dataArray = response.data.data;
-      } else if (response.data && typeof response.data === 'object') {
-        console.warn('History: Respuesta no es un array, intentando convertir:', response.data);
-        dataArray = [];
-      } else {
-        console.error('History: Formato de respuesta inválido:', response.data);
-        dataArray = [];
-      }
-      
-      console.log('History: Datos a mapear:', dataArray.length || 0);
-      
-      const mapped = dataArray.map(log => ({
-        id:          log.id,
-        fecha:       new Date(log.created_at).toLocaleString(),
-        accion:      log.action_type || 'Sin acción',
-        quien:       log.performed_by_name || 'Sistema',
-        objetivo:    log.target_user_name || '-',
-        descripcion: log.description || 'Sin descripción'
-      }));
-      
-      setRows(mapped);
-    } catch (err) {
-      console.error('Error cargando historial:', err);
-      console.error('Error response:', err.response);
-      const errorMessage = err.response?.data?.error || err.message || 'Error desconocido';
-      setError('Error al cargar el historial: ' + errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Ejecutar fetchLogs solo cuando esté autenticado y sea admin
-  useEffect(() => {
-    if (isAuthenticated && isAdmin) {
-      fetchLogs();
-      const intervalId = setInterval(fetchLogs, POLL_INTERVAL);
-      return () => clearInterval(intervalId);
-    }
-  }, [isAuthenticated, isAdmin]);
-  // Función helper para obtener el color de la acción
-  const getActionColor = (accion) => {
-    const actionLower = accion.toLowerCase();
-    
-    // Colores adaptativos según el tema actual
-    const actionColors = theme.palette.mode === 'dark' 
-      ? {
-          // MODO OSCURO - Colores más claros y vibrantes
-          'login': '#64b5f6',
-          'logout': '#ffb74d', 
-          'usuario creado': '#81c784',
-          'usuario actualizado': '#fff176',
-          'usuario eliminado': '#e57373',
-          'usuario habilitado': '#4fc3f7',
-          'usuario deshabilitado': '#f06292',
-          'usuario rehabilitado': '#4fc3f7',
-          'rol cambiado': '#ce93d8',
-          'contraseña cambiada': '#ffd54f',
-          'contraseña propia cambiada': '#ffcc02',
-          'producto creado': '#81c784',
-          'producto actualizado': '#fff176',
-          'producto eliminado': '#e57373',
-          'stock actualizado': '#ba68c8',
-          // 🆕 NUEVOS: Colores para categorías (tonos azules)
-          'categoría creada': '#4fc3f7',
-          'categoría actualizada': '#29b6f6',
-          'categoría eliminada': '#e1f5fe',
-          // 🆕 NUEVOS: Colores para ubicaciones (tonos naranjas)
-          'ubicación creada': '#ffab40',
-          'ubicación actualizada': '#ff9800',
-          'ubicación eliminada': '#ff7043',
-          'crear': '#81c784',
-          'actualizar': '#fff176',
-          'eliminar': '#e57373',
-          'habilitar': '#4fc3f7',
-          'deshabilitar': '#f06292',
-          'default': '#90a4ae'
+    // FilteredRows useMemo
+    const filteredRows = useMemo(() => {
+        if (!isSearching || !searchTerm) {
+            return rows;
         }
-      : {
-          // MODO CLARO - Colores más oscuros y contrastantes
-          'login': '#1976d2',
-          'logout': '#f57c00',
-          'usuario creado': '#388e3c',
-          'usuario actualizado': '#f57f17',
-          'usuario eliminado': '#d32f2f',
-          'usuario habilitado': '#0288d1',
-          'usuario deshabilitado': '#c2185b',
-          'usuario rehabilitado': '#0288d1',
-          'rol cambiado': '#8e24aa',
-          'contraseña cambiada': '#f9a825',
-          'contraseña propia cambiada': '#ff8f00',
-          'producto creado': '#388e3c',
-          'producto actualizado': '#f57f17',
-          'producto eliminado': '#d32f2f',
-          'stock actualizado': '#7b1fa2',
-          // 🆕 NUEVOS: Colores para categorías (tonos azules)
-          'categoría creada': '#0277bd',
-          'categoría actualizada': '#0288d1',
-          'categoría eliminada': '#0277bd',
-          // 🆕 NUEVOS: Colores para ubicaciones (tonos naranjas)
-          'ubicación creada': '#ef6c00',
-          'ubicación actualizada': '#f57c00',
-          'ubicación eliminada': '#e64a19',
-          'crear': '#388e3c',
-          'actualizar': '#f57f17',
-          'eliminar': '#d32f2f',
-          'habilitar': '#0288d1',
-          'deshabilitar': '#c2185b',
-          'default': '#616161'
-        };
 
-    // Buscar coincidencias en el texto de la acción
-    for (const [key, color] of Object.entries(actionColors)) {
-      if (actionLower.includes(key)) {
-        return color;
-      }
-    }
-    
-    return actionColors.default;
-  };
-
-  // Memoizar columnas para evitar re-renders
-  const columns = useMemo(() => [
-    { 
-      field: 'id',
-      headerName: 'ID',
-      width: 70,
-      headerAlign: 'center',
-      align: 'center',
-      renderCell: (params) => (
-        <Box sx={{ 
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          fontSize: '0.875rem'
-        }}>
-          {params.value}
-        </Box>
-      )
-    },
-    { 
-      field: 'fecha', 
-      headerName: 'Fecha y Hora', 
-      width: 180,
-      flex: 0.8,
-      renderCell: (params) => (
-        <Box sx={{ 
-          display: 'flex',
-          alignItems: 'center',
-          height: '100%',
-          fontSize: '0.875rem',
-          fontFamily: 'monospace'
-        }}>
-          {/* 👇 NUEVO: Resaltar fecha */}
-          <SearchHighlighter 
-            text={params.value} 
-            searchTerm={searchTerm}
-          />
-        </Box>
-      )
-    },
-    { 
-      field: 'accion', 
-      headerName: 'Acción', 
-      width: 160,
-      flex: 0.7,      renderCell: (params) => {
-        const actionColor = getActionColor(params.value);
-        const actionLower = params.value.toLowerCase();
-        
-        // Iconos para diferentes tipos de acciones
-        const getActionIcon = () => {
-          if (actionLower.includes('creado') || actionLower.includes('crear')) return '➕';
-          if (actionLower.includes('actualizado') || actionLower.includes('actualizar')) return '✏️';
-          if (actionLower.includes('eliminado') || actionLower.includes('eliminar')) return '🗑️';
-          if (actionLower.includes('deshabilitado')) return '🚫';
-          if (actionLower.includes('rehabilitado') || actionLower.includes('habilitado')) return '✅';
-          if (actionLower.includes('login')) return '🔐';
-          if (actionLower.includes('logout')) return '🚪';
-          if (actionLower.includes('contraseña')) return '🔑';
-          if (actionLower.includes('rol')) return '👤';
-          if (actionLower.includes('categoría')) return '🏷️';
-          if (actionLower.includes('ubicación')) return '📍';
-          if (actionLower.includes('producto')) return '📦';
-          if (actionLower.includes('stock')) return '📊';
-          return '📝';
-        };
-
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            height: '100%'
-          }}>
-            <Box sx={{
-              backgroundColor: theme.palette.mode === 'dark' 
-                ? `${actionColor}25` // 25% opacity en modo oscuro
-                : `${actionColor}20`, // 20% opacity en modo claro
-              color: actionColor,
-              padding: '6px 12px',
-              borderRadius: '16px',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              border: `2px solid ${actionColor}60`,
-              minWidth: 'fit-content',
-              textAlign: 'center',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              // Mejorar la sombra y el contraste
-              boxShadow: theme.palette.mode === 'light' 
-                ? `0 2px 4px ${actionColor}25, 0 1px 2px ${actionColor}15`
-                : `0 1px 3px rgba(0,0,0,0.3)`,
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                transform: 'translateY(-1px)',
-                boxShadow: theme.palette.mode === 'light' 
-                  ? `0 4px 8px ${actionColor}30, 0 2px 4px ${actionColor}20`
-                  : `0 2px 6px rgba(0,0,0,0.4)`
-              }
-            }}>
-              <span style={{ fontSize: '0.75rem' }}>{getActionIcon()}</span>
-              <SearchHighlighter 
-                text={params.value} 
-                searchTerm={searchTerm}
-              />
-            </Box>
-          </Box>
+        return rows.filter(row =>
+            (row.accion && row.accion.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (row.quien && row.quien.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (row.objetivo && row.objetivo.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (row.descripcion && row.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (row.fecha && row.fecha.toLowerCase().includes(searchTerm.toLowerCase()))
         );
-      }
-    },
-    { 
-      field: 'quien', 
-      headerName: 'Realizado por', 
-      width: 200,
-      flex: 1,
-      cellClassName: "name-column--cell",
-      renderCell: (params) => (
-        <Box sx={{ 
-          display: 'flex',
-          alignItems: 'center',
-          height: '100%',
-          fontSize: '0.875rem',
-          fontWeight: 'bold'
-        }}>
-          {/* 👇 NUEVO: Resaltar quien */}
-          <SearchHighlighter 
-            text={params.value} 
-            searchTerm={searchTerm}
-          />
-        </Box>
-      )
-    },
-    { 
-      field: 'objetivo', 
-      headerName: 'Usuario Afectado', 
-      width: 200,
-      flex: 1,
-      renderCell: (params) => (
-        <Box sx={{ 
-          display: 'flex',
-          alignItems: 'center',
-          height: '100%',
-          fontSize: '0.875rem',
-          fontStyle: params.value === '-' ? 'italic' : 'normal',
-          color: params.value === '-' ? safeColors.grey?.[500] || '#9e9e9e' : 'inherit'
-        }}>
-          {/* 👇 NUEVO: Resaltar objetivo */}
-          <SearchHighlighter 
-            text={params.value} 
-            searchTerm={searchTerm}
-          />
-        </Box>
-      )
-    },
-    { 
-      field: 'descripcion', 
-      headerName: 'Descripción', 
-      width: 300,
-      flex: 1.5,
-      renderCell: (params) => (
-        <Box sx={{ 
-          display: 'flex',
-          alignItems: 'center',
-          height: '100%',
-          padding: '8px 4px',
-          whiteSpace: 'normal', 
-          wordWrap: 'break-word',
-          lineHeight: 1.3,
-          fontSize: '0.875rem',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis'
-        }}>
-          {/* 👇 NUEVO: Resaltar descripción */}
-          <SearchHighlighter 
-            text={params.value} 
-            searchTerm={searchTerm}
-          />
-        </Box>
-      )
-    },
-  ], [safeColors, searchTerm]); // 👈 AGREGAR searchTerm a las dependencias
+    }, [rows, isSearching, searchTerm]);
 
-  // Pantalla de carga inicial
-  if (loading && !isAuthenticated) {
-    return (
-      <Box m="20px" display="flex" justifyContent="center" alignItems="center" height="50vh">
-        <CircularProgress size={60} />
-        <Box ml={2} fontSize="1.2rem">Verificando permisos...</Box>
-      </Box>
-    );
-  }
+    // Verificar autenticación y permisos al montar
+    useEffect(() => {
+        const checkAuth = () => {
+            const token = localStorage.getItem("token");
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-  // Error de autenticación o permisos
-  if (error && !isAuthenticated) {
-    return (
-      <Box m="20px">
-        <Header
-          title="Historial de Operaciones"
-          subtitle="Registro de actividad del sistema"
-        />
-        <Alert severity="error" sx={{ mt: 2 }}>
-          {error}
-        </Alert>
-      </Box>
-    );
-  }
+            console.log('History: Verificando auth...', { token: !!token, user });
 
-  return (
-    <Box m="20px">
-      <Header
-        title="Historial de Operaciones"
-        subtitle={`${rows.length} registros de actividad del sistema`}
-      />
-      
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      <Box 
-        m="40px 0 0 0" 
-        height={{ xs: "70vh", sm: "75vh", md: "80vh" }}
-        width="100%"
-        sx={{
-          "& .MuiDataGrid-root": {
-            border: "none",
-          },          "& .MuiDataGrid-row": {
-            minHeight: '60px !important',
-            borderBottom: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-            transition: 'all 0.2s ease-in-out',
-            "&:hover": {
-              backgroundColor: theme.palette.mode === 'dark' 
-               ? 'rgba(255, 255, 255, 0.08) !important'
-               : 'rgba(0, 0, 0, 0.04) !important',
-              transform: 'translateX(2px)',
-              boxShadow: theme.palette.mode === 'dark'
-                ? '2px 0 8px rgba(255,255,255,0.1)'
-                : '2px 0 8px rgba(0,0,0,0.1)',
-            },
-          },
-          "& .MuiDataGrid-cell": {
-            borderBottom: "none",
-            display: 'flex',
-            alignItems: 'center',
-            padding: '12px 8px',
-            transition: 'all 0.2s ease-in-out',
-          },
-          // Responsividad
-          [theme.breakpoints.down('md')]: {
-            "& .MuiDataGrid-columnHeader": {
-              fontSize: '0.8rem',
-            },
-            "& .MuiDataGrid-cell": {
-              fontSize: '0.8rem',
-              padding: '4px',
-            },
-          },
-          [theme.breakpoints.down('sm')]: {
-            "& .MuiDataGrid-toolbarContainer": {
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: 1,
-            },
-            "& .MuiDataGrid-cell[data-field='id']": {
-              display: 'none',
-            },
-            "& .MuiDataGrid-columnHeader[data-field='id']": {
-              display: 'none',
-            },
-          },
-        }}
-      >
-        <DataGrid
-          rows={filteredRows} // 👈 CAMBIAR DE rows A filteredRows
-          columns={columns}
-          slots={{ toolbar: GridToolbar }}
-          loading={loading}
-          rowHeight={60}
-          initialState={{
-            pagination: {
-              paginationModel: { pageSize: 25 }
-            },
-            columns: {
-              columnVisibilityModel: {
-                id: window.innerWidth > 768,
-              },
-            },
-          }}
-          pageSizeOptions={[10, 25, 50, 100]}
-          disableRowSelectionOnClick
-          disableColumnMenu={window.innerWidth < 768}
-          hideFooterSelectedRowCount
-          sx={{
-            '& .MuiDataGrid-cell': {
-              display: 'flex',
-              alignItems: 'center',
-            },
-            '& .MuiDataGrid-renderingZone': {
-              maxHeight: 'none !important',
-            },
-            '& .MuiDataGrid-cell .MuiDataGrid-cellContent': {
-              display: 'flex',
-              alignItems: 'center',
-              height: '100%',
+            if (!token) {
+                setError("No se encontró token de autenticación");
+                setLoading(false);
+                return;
             }
-          }}
-        />
-      </Box>
-    </Box>
-  );
+
+            if (!user || !user.id) {
+                setError("No se encontró información de usuario");
+                setLoading(false);
+                return;
+            }
+
+            // Verificar si es admin (roleId === 1)
+            if (user.roleId !== 1) {
+                setError("No tienes permisos para ver el historial (solo administradores)");
+                setLoading(false);
+                return;
+            }
+
+            setIsAuthenticated(true);
+            setIsAdmin(true);
+        };
+
+        // Verificar inmediatamente
+        checkAuth();
+
+        // Si no está autenticado, reintentamos después de un momento
+        const timeoutId = setTimeout(checkAuth, 100);
+
+        return () => clearTimeout(timeoutId);
+    }, []);
+
+    const fetchLogs = useCallback(async ({ silent = false } = {}) => {
+        if (!isAuthenticated || !isAdmin) {
+            console.log('History: No autenticado o no es admin, saltando fetchLogs');
+            return;
+        }
+
+        try {
+            if (!silent) {
+                setLoading(true);
+            }
+            setError(null);
+
+            console.log(`History: Obteniendo historial... (${silent ? 'silencioso' : 'completo'})`);
+            const response = await api.get('/api/history');
+
+            let dataArray = [];
+            if (Array.isArray(response.data)) {
+                dataArray = response.data;
+            } else if (response.data && Array.isArray(response.data.data)) {
+                // Si viene envuelto en un objeto con propiedad data
+                dataArray = response.data.data;
+            } else if (response.data && typeof response.data === 'object') {
+                console.warn('History: Respuesta no es un array, intentando convertir:', response.data);
+                dataArray = [];
+            } else {
+                console.error('History: Formato de respuesta inválido:', response.data);
+                dataArray = [];
+            }
+
+            const mapped = dataArray.map(log => ({
+                id: log.id,
+                fecha: new Date(log.created_at).toLocaleString(),
+                accion: log.action_type || 'Sin acción',
+                quien: log.performed_by_name || 'Sistema',
+                objetivo: log.target_user_name || '-',
+                descripcion: log.description || 'Sin descripción'
+            }));
+
+            setRows(mapped);
+        } catch (err) {
+            console.error('Error cargando historial:', err);
+            const errorMessage = err.response?.data?.error || err.message || 'Error desconocido';
+            setError('Error al cargar el historial: ' + errorMessage);
+        } finally {
+            if (!silent) {
+                setLoading(false);
+            }
+        }
+    }, [isAuthenticated, isAdmin]);
+
+    // Ejecutar fetchLogs solo cuando esté autenticado y sea admin
+    useEffect(() => {
+        if (isAuthenticated && isAdmin) {
+            fetchLogs();
+            const intervalId = setInterval(() => fetchLogs({ silent: true }), POLL_INTERVAL);
+            return () => clearInterval(intervalId);
+        }
+    }, [fetchLogs, isAuthenticated, isAdmin]);
+
+    // Función helper para obtener el color de la acción
+    const getActionColor = useCallback((accion) => {
+        const actionLower = accion.toLowerCase();
+
+        // Colores adaptativos según el tema actual
+        const actionColors = theme.palette.mode === 'dark'
+            ? {
+                // MODO OSCURO
+                'login': '#64b5f6', // Blue
+                'logout': '#ffb74d', // Orange
+                'creado': '#81c784', // Green
+                'creada': '#81c784', // Green
+                'crear': '#81c784', // Green
+                'actualizado': '#ffb74d', // Orange (Better than yellow)
+                'actualizada': '#ffb74d', // Orange
+                'actualizar': '#ffb74d', // Orange
+                'modificado': '#ffb74d', // Orange
+                'eliminado': '#e57373', // Red
+                'eliminada': '#e57373', // Red
+                'eliminó': '#e57373', // Red
+                'eliminar': '#e57373', // Red
+                'habilitado': '#4fc3f7', // Light Blue
+                'rehabilitado': '#4fc3f7', // Light Blue
+                'deshabilitado': '#f06292', // Pink
+                'rol': '#ce93d8', // Purple
+                'contraseña': '#ffd54f', // Amber
+                'stock': '#ba68c8', // Purple
+                'default': '#90a4ae' // Grey
+            }
+            : {
+                // MODO CLARO
+                'login': '#1976d2', // Dark Blue
+                'logout': '#f57c00', // Dark Orange
+                'creado': '#388e3c', // Dark Green
+                'creada': '#388e3c', // Dark Green
+                'crear': '#388e3c', // Dark Green
+                'actualizado': '#f57c00', // Dark Orange (Readable on white)
+                'actualizada': '#f57c00', // Dark Orange
+                'actualizar': '#f57c00', // Dark Orange
+                'modificado': '#f57c00', // Dark Orange
+                'eliminado': '#d32f2f', // Dark Red
+                'eliminada': '#d32f2f', // Dark Red
+                'eliminó': '#d32f2f', // Dark Red
+                'eliminar': '#d32f2f', // Dark Red
+                'habilitado': '#0288d1', // Blue
+                'rehabilitado': '#0288d1', // Blue
+                'deshabilitado': '#c2185b', // Pink/Red
+                'rol': '#7b1fa2', // Purple
+                'contraseña': '#fbc02d', // Dark Yellow/Amber
+                'stock': '#7b1fa2', // Purple
+                'default': '#616161' // Dark Grey
+            };
+
+        // Buscar coincidencias en el texto de la acción
+        // Orden de prioridad: Eliminado > Actualizado > Creado > Otros
+        if (actionLower.includes('elimin') || actionLower.includes('borrar')) return actionColors['eliminado'];
+        if (actionLower.includes('actualiz') || actionLower.includes('modific') || actionLower.includes('edit')) return actionColors['actualizado'];
+        if (actionLower.includes('crea') || actionLower.includes('registra') || actionLower.includes('nuevo')) return actionColors['creado'];
+
+        for (const [key, color] of Object.entries(actionColors)) {
+            if (actionLower.includes(key)) {
+                return color;
+            }
+        }
+
+        return actionColors.default;
+    }, [theme.palette.mode]);
+
+    if (loading && !isAuthenticated) {
+        return (
+            <Box m="20px" display="flex" justifyContent="center" alignItems="center" height="50vh">
+                <CircularProgress size={60} />
+                <Box ml={2} fontSize="1.2rem">Verificando permisos...</Box>
+            </Box>
+        );
+    }
+
+    if (error && !isAuthenticated) {
+        return (
+            <Box m="20px">
+                <Header title="HISTORIAL" subtitle="Registro de actividades del sistema" />
+                <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>
+            </Box>
+        );
+    }
+
+    return (
+        <Box m="20px">
+            <Header title="HISTORIAL" subtitle="Registro de actividades del sistema" />
+
+            {error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                    {error}
+                </Alert>
+            )}
+
+            <TableContainer component={Paper} sx={{ backgroundColor: safeColors.primary[400], mt: "40px" }}>
+                <Table>
+                    <TableHead sx={{ backgroundColor: safeColors.blueAccent[700] }}>
+                        <TableRow>
+                            <TableCell align="center"><Typography fontWeight="bold">ID</Typography></TableCell>
+                            <TableCell><Typography fontWeight="bold">Fecha y Hora</Typography></TableCell>
+                            <TableCell align="center"><Typography fontWeight="bold">Acción</Typography></TableCell>
+                            <TableCell><Typography fontWeight="bold">Realizado por</Typography></TableCell>
+                            <TableCell><Typography fontWeight="bold">Objetivo</Typography></TableCell>
+                            <TableCell><Typography fontWeight="bold">Descripción</Typography></TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {filteredRows.map((row) => (
+                            <TableRow key={row.id} hover>
+                                <TableCell align="center">
+                                    <SearchHighlighter text={row.id?.toString()} searchTerm={searchTerm} />
+                                </TableCell>
+                                <TableCell>
+                                    <SearchHighlighter text={row.fecha} searchTerm={searchTerm} />
+                                </TableCell>
+                                <TableCell align="center">
+                                    <Box
+                                        m="0 auto"
+                                        p="5px"
+                                        display="flex"
+                                        justifyContent="center"
+                                        backgroundColor={getActionColor(row.accion)}
+                                        borderRadius="4px"
+                                        width="100%"
+                                    >
+                                        <SearchHighlighter
+                                            text={row.accion}
+                                            searchTerm={searchTerm}
+                                            style={{ color: '#fff', fontWeight: 'bold' }}
+                                        />
+                                    </Box>
+                                </TableCell>
+                                <TableCell>
+                                    <SearchHighlighter text={row.quien} searchTerm={searchTerm} />
+                                </TableCell>
+                                <TableCell>
+                                    <SearchHighlighter text={row.objetivo} searchTerm={searchTerm} />
+                                </TableCell>
+                                <TableCell>
+                                    <SearchHighlighter text={row.descripcion} searchTerm={searchTerm} />
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+        </Box>
+    );
 };
 
 export default History;

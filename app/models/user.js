@@ -2,7 +2,7 @@ const Model = require("./Model");
 const bcrypt = require("bcryptjs");
 
 class User extends Model {
- constructor() {
+  constructor() {
     super();
     this.tableName = "user";
     this.fillable = [
@@ -10,13 +10,13 @@ class User extends Model {
       "password",
       "account",
       "email",
-      "ranks",
+      "rank_id", // 👈 Changed from ranks
       "status",
-      "roleId", // Ya está incluido
+      "roleId",
     ];
-    
+
     this.initializeDB();
-    console.log('✅ User model inicializado correctamente');
+
   }
 
   /** Busca un usuario por su email */
@@ -77,45 +77,63 @@ class User extends Model {
         data.password = bcrypt.hashSync(data.password, 10);
       }
 
-      console.log('📝 Updating user:', id, 'with data:', { ...data, password: data.password ? '***' : undefined });
+      // Map 'ranks' to 'rank_id' if present
+      if (data.ranks !== undefined) {
+        data.rank_id = data.ranks;
+        delete data.ranks;
+      }
+
+      // Filter data to only include fillable fields
+      const filteredData = {};
+      this.fillable.forEach((field) => {
+        if (field in data) {
+          filteredData[field] = data[field];
+        }
+      });
+
+      console.log('📝 Updating user:', id, 'with data:', { ...filteredData, password: filteredData.password ? '***' : undefined });
+
+      if (Object.keys(filteredData).length === 0) {
+        return 0; // Nothing to update
+      }
 
       // 2) Usar query builder para update
       const result = await this.getDB()
         .where([["id", id]])
-        .update(data);
-      
+        .update(filteredData);
+
       return result;
     } catch (error) {
       console.error('❌ Error en updateUser:', error);
       throw error;
     }
   }
-  
+
   async deleteUser(id) {
     try {
       console.log('🗑️ Deleting user:', id);
-      
+
       const result = await this.getDB()
         .where([["id", id]])
         .delete();
-      
+
       return result;
     } catch (error) {
       console.error('❌ Error en deleteUser:', error);
       throw error;
     }
   }
-  
+
   /** Actualiza la columna last_access con la fecha actual */
   async updateLastAccess(id) {
     try {
       console.log('🕒 Updating last access for user:', id);
-      
+
       // Usamos Date() → MySQL lo castea a DATETIME
       const result = await this.getDB()
         .where([["id", id]])
         .update({ last_access: new Date() });
-      
+
       return result;
     } catch (error) {
       console.error('❌ Error en updateLastAccess:', error);
@@ -123,24 +141,31 @@ class User extends Model {
     }
   }
 
-  /** Trae todos los usuarios + rol + last_access */
+  /** Trae todos los usuarios + rol + rango + last_access */
   async getAllUsers() {
     try {
       console.log('📋 Getting all users...');
-      
+
       const cols = [
         "user.id",
-        ...this.fillable.map((f) => `user.${f}`),
+        "user.name",
+        "user.email",
+        "user.account",
+        "user.status",
+        "user.roleId",
+        "user.rank_id",
         "role.role AS access",
+        "ranks.name AS ranks", // 👈 Alias to maintain compatibility
         "user.last_access",
       ];
 
       const db = this.getDB();
       db.reset(); // 👈 AGREGAR RESET
-      
+
       const rows = await db
         .select(cols)
         .join("role", "role.id = user.roleId", "LEFT")
+        .join("ranks", "ranks.id = user.rank_id", "LEFT") // 👈 Join with ranks
         .get();
 
       console.log('📋 Users retrieved:', rows.length);
@@ -148,6 +173,24 @@ class User extends Model {
     } catch (error) {
       console.error('❌ Error en getAllUsers:', error);
       throw error;
+    }
+  }
+
+  async getPermissions(roleId) {
+    try {
+      // Usar this.execute en lugar de getDB().query
+      const rows = await this.execute(
+        `SELECT p.name 
+         FROM permission p 
+         JOIN role_permission rp ON p.id = rp.permission_id 
+         WHERE rp.role_id = ?`,
+        [roleId]
+      );
+
+      return Array.isArray(rows) ? rows.map(r => r.name) : [];
+    } catch (error) {
+      console.error('❌ Error getting permissions:', error);
+      return [];
     }
   }
 }

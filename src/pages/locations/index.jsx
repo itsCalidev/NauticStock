@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Box,
   Button,
@@ -19,9 +19,9 @@ import {
   TextField,
   Chip
 } from "@mui/material";
-import { 
-  Add as AddIcon, 
-  Edit as EditIcon, 
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
   Delete as DeleteIcon,
   LocationOn as LocationIcon,
   Visibility as VisibilityIcon,
@@ -38,7 +38,7 @@ import api from "../../api/axiosClient";
 export default function Locations() {
   const theme = useTheme();
   const colors = Token(theme.palette.mode);
-    const [locations, setLocations] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState(null);
@@ -63,7 +63,7 @@ export default function Locations() {
   // Filtro de ubicaciones con búsqueda
   const filteredLocations = useMemo(() => {
     if (!Array.isArray(locations)) return [];
-    
+
     if (!isSearching || !searchTerm) {
       return locations;
     }
@@ -76,12 +76,14 @@ export default function Locations() {
       );
     });
   }, [locations, isSearching, searchTerm]);
-  useEffect(() => {
-    fetchLocations();
-  }, [showDisabled]);
-  
-  const fetchLocations = async () => {
+
+  const showSnackbar = (message, severity = "success") => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const fetchLocations = useCallback(async ({ silent = false } = {}) => {
     try {
+      if (!silent) setLoading(true);
       const endpoint = showDisabled ? "/api/locations/all/disabled" : "/api/locations";
       const { data } = await api.get(endpoint);
       // Asegurar que siempre sea un array
@@ -93,13 +95,40 @@ export default function Locations() {
       setLocations([]); // Asegurar array vacío en caso de error
       showSnackbar("Error al cargar ubicaciones", "error");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, [showDisabled]);
 
-  const showSnackbar = (message, severity = "success") => {
-    setSnackbar({ open: true, message, severity });
-  };
+  const POLL_INTERVAL = 5000;
+
+  useEffect(() => {
+    fetchLocations();
+    const intervalId = setInterval(() => fetchLocations({ silent: true }), POLL_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [fetchLocations]);
+
+  // Escuchar eventos de otras ventanas/pestañas
+  useEffect(() => {
+    const handleReload = () => fetchLocations({ silent: true });
+
+    window.addEventListener("locationCreated", handleReload);
+    window.addEventListener("locationUpdated", handleReload);
+    window.addEventListener("locationDeleted", handleReload);
+    window.addEventListener("locationStatusChanged", handleReload);
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'locationChanged') handleReload();
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      window.removeEventListener("locationCreated", handleReload);
+      window.removeEventListener("locationUpdated", handleReload);
+      window.removeEventListener("locationDeleted", handleReload);
+      window.removeEventListener("locationStatusChanged", handleReload);
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, [fetchLocations]);
 
   const handleOpen = (location = null) => {
     if (location) {
@@ -128,9 +157,13 @@ export default function Locations() {
       if (editingLocation) {
         await api.put(`/api/locations/${editingLocation.id}`, formData);
         showSnackbar("Ubicación actualizada exitosamente");
+        window.dispatchEvent(new Event("locationUpdated"));
+        localStorage.setItem('locationChanged', Date.now().toString());
       } else {
         await api.post("/api/locations", formData);
         showSnackbar("Ubicación creada exitosamente");
+        window.dispatchEvent(new Event("locationCreated"));
+        localStorage.setItem('locationChanged', Date.now().toString());
       }
 
       handleClose();
@@ -152,6 +185,8 @@ export default function Locations() {
     try {
       await api.delete(`/api/locations/${deleteDialog.locationId}`);
       showSnackbar("Ubicación eliminada exitosamente");
+      window.dispatchEvent(new Event("locationDeleted"));
+      localStorage.setItem('locationChanged', Date.now().toString());
       fetchLocations();
     } catch (error) {
       const message = error.response?.data?.error || "Error al eliminar la ubicación";
@@ -169,6 +204,8 @@ export default function Locations() {
     try {
       await api.put(`/api/locations/${id}/enable`);
       showSnackbar(`Ubicación "${name}" rehabilitada exitosamente`);
+      window.dispatchEvent(new Event("locationStatusChanged"));
+      localStorage.setItem('locationChanged', Date.now().toString());
       fetchLocations();
     } catch (error) {
       const message = error.response?.data?.error || "Error al rehabilitar la ubicación";
@@ -200,9 +237,9 @@ export default function Locations() {
 
   return (
     <Box m="20px">      <Header
-        title="Gestión de Ubicaciones"
-        subtitle={`Administra las ubicaciones del almacén (${filteredLocations.length} ubicaciones)`}
-      />      <Box display="flex" justifyContent="space-between" alignItems="center" mb="20px">
+      title="Gestión de Ubicaciones"
+      subtitle={`Administra las ubicaciones del almacén (${filteredLocations.length} ubicaciones)`}
+    />      <Box display="flex" justifyContent="space-between" alignItems="center" mb="20px">
         <Button
           variant="outlined"
           startIcon={showDisabled ? <VisibilityOffIcon /> : <VisibilityIcon />}
@@ -211,7 +248,7 @@ export default function Locations() {
         >
           {showDisabled ? "Ocultar Deshabilitadas" : "Mostrar Deshabilitadas"}
         </Button>
-        
+
         <Button
           variant="contained"
           color="secondary"
@@ -260,99 +297,99 @@ export default function Locations() {
               </TableCell>
             </TableRow>
           </TableHead>          <TableBody>
-            {Array.isArray(filteredLocations) && filteredLocations.map((location) => (              <TableRow
-                key={location.id}
-                sx={{
-                  "&:hover": { 
-                    backgroundColor: theme.palette.mode === 'dark' 
-                      ? colors.primary[300] 
-                      : 'rgba(0, 0, 0, 0.04)' // Hover claro para modo claro
-                  },
-                  backgroundColor: colors.primary[400],
-                }}
-              >                <TableCell>
-                  <Chip
-                    label={
-                      <SearchHighlighter
-                        text={location.name}
-                        searchTerm={searchTerm}
-                      />
-                    }
-                    color="secondary"
-                    variant="filled"
-                    icon={<LocationIcon />}
-                    sx={{
-                      fontWeight: 'bold',
-                      fontSize: '0.875rem',
-                      // Mejor visibilidad en modo oscuro  
-                      backgroundColor: colors.blueAccent[600],
-                      color: colors.grey[100],
-                      '&:hover': {
-                        backgroundColor: colors.blueAccent[500],
-                      },
-                      '& .MuiChip-icon': {
-                        color: colors.grey[100]
-                      }
-                    }}
-                  />
-                </TableCell>
-                <TableCell>
-                  <Typography variant="body2">
+            {Array.isArray(filteredLocations) && filteredLocations.map((location) => (<TableRow
+              key={location.id}
+              sx={{
+                "&:hover": {
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? colors.primary[300]
+                    : 'rgba(0, 0, 0, 0.04)' // Hover claro para modo claro
+                },
+                backgroundColor: colors.primary[400],
+              }}
+            >                <TableCell>
+                <Chip
+                  label={
                     <SearchHighlighter
-                      text={location.description || "Sin descripción"}
+                      text={location.name}
                       searchTerm={searchTerm}
                     />
-                  </Typography>
-                </TableCell>
+                  }
+                  color="secondary"
+                  variant="filled"
+                  icon={<LocationIcon />}
+                  sx={{
+                    fontWeight: 'bold',
+                    fontSize: '0.875rem',
+                    // Mejor visibilidad en modo oscuro  
+                    backgroundColor: colors.blueAccent[600],
+                    color: colors.grey[100],
+                    '&:hover': {
+                      backgroundColor: colors.blueAccent[500],
+                    },
+                    '& .MuiChip-icon': {
+                      color: colors.grey[100]
+                    }
+                  }}
+                />
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2">
+                  <SearchHighlighter
+                    text={location.description || "Sin descripción"}
+                    searchTerm={searchTerm}
+                  />
+                </Typography>
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2" color="textSecondary">
+                  {formatDate(location.created_at)}
+                </Typography>
+              </TableCell>                <TableCell>
+                <Typography variant="body2" color="textSecondary">
+                  {formatDate(location.updated_at)}
+                </Typography>
+              </TableCell>
+              {showDisabled && (
                 <TableCell>
-                  <Typography variant="body2" color="textSecondary">
-                    {formatDate(location.created_at)}
-                  </Typography>
-                </TableCell>                <TableCell>
-                  <Typography variant="body2" color="textSecondary">
-                    {formatDate(location.updated_at)}
-                  </Typography>
+                  <Chip
+                    label={location.status === 0 ? "Activa" : "Deshabilitada"}
+                    color={location.status === 0 ? "success" : "error"}
+                    variant="filled"
+                    size="small"
+                  />
                 </TableCell>
-                {showDisabled && (
-                  <TableCell>
-                    <Chip
-                      label={location.status === 0 ? "Activa" : "Deshabilitada"}
-                      color={location.status === 0 ? "success" : "error"}
-                      variant="filled"
-                      size="small"
-                    />
-                  </TableCell>
-                )}
-                <TableCell align="center">
-                  {location.status === 0 ? (
-                    <>
-                      <IconButton
-                        onClick={() => handleOpen(location)}
-                        color="warning"
-                        size="small"
-                        sx={{ mr: 1 }}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton
-                        onClick={() => handleDelete(location.id, location.name)}
-                        color="error"
-                        size="small"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </>
-                  ) : (
+              )}
+              <TableCell align="center">
+                {location.status === 0 ? (
+                  <>
                     <IconButton
-                      onClick={() => handleEnable(location.id, location.name)}
-                      color="success"
+                      onClick={() => handleOpen(location)}
+                      color="warning"
                       size="small"
-                      title="Rehabilitar ubicación"
-                    >                      <RestoreIcon />
+                      sx={{ mr: 1 }}
+                    >
+                      <EditIcon />
                     </IconButton>
-                  )}
-                </TableCell>
-              </TableRow>
+                    <IconButton
+                      onClick={() => handleDelete(location.id, location.name)}
+                      color="error"
+                      size="small"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </>
+                ) : (
+                  <IconButton
+                    onClick={() => handleEnable(location.id, location.name)}
+                    color="success"
+                    size="small"
+                    title="Rehabilitar ubicación"
+                  >                      <RestoreIcon />
+                  </IconButton>
+                )}
+              </TableCell>
+            </TableRow>
             ))}
           </TableBody>
         </Table>
@@ -417,9 +454,9 @@ export default function Locations() {
           <Button onClick={cancelDelete} color="inherit">
             Cancelar
           </Button>
-          <Button 
-            onClick={confirmDelete} 
-            variant="contained" 
+          <Button
+            onClick={confirmDelete}
+            variant="contained"
             color="error"
             autoFocus
           >

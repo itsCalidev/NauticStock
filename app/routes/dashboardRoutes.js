@@ -8,46 +8,28 @@ const DB = require('../classes/db');
 router.get('/inventory-stats', auth, isAdmin, async (req, res, next) => {
   try {
     console.log('📊 Obteniendo estadísticas de inventario...');
-    
+
     const db = new DB();
-    
+
     // Query mejorada para obtener TODAS las categorías, incluso las vacías
+    // ACTUALIZADO: Usar JOIN con categories table
     const query = `
       SELECT DISTINCT
-        COALESCE(p.category, 'Sin Categoría') as categoria,
+        COALESCE(c.name, 'Sin Categoría') as categoria,
         COUNT(p.id) as productos,
         COALESCE(SUM(p.quantity), 0) as cantidad,
         COALESCE(SUM(CASE WHEN p.quantity <= p.min_stock THEN 1 ELSE 0 END), 0) as bajo_stock,
         COALESCE(AVG(p.price), 0) as precio_promedio,
         MIN(p.created_at) as primera_fecha
       FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.status = 0
-      GROUP BY p.category
-      
-      UNION ALL
-      
-      -- Agregar categorías que no tienen productos activos
-      SELECT DISTINCT 
-        category as categoria,
-        0 as productos,
-        0 as cantidad,
-        0 as bajo_stock,
-        0 as precio_promedio,
-        NOW() as primera_fecha
-      FROM products 
-      WHERE category NOT IN (
-        SELECT DISTINCT category 
-        FROM products 
-        WHERE status = 0 AND category IS NOT NULL
-      )
-      AND category IS NOT NULL
-      AND status = 1
-      
+      GROUP BY c.name
       ORDER BY cantidad DESC, categoria ASC
     `;
-    
+
     const stats = await db.execute(query);
-    
+
     // Procesar y limpiar datos
     const processedStats = stats.map(stat => ({
       categoria: stat.categoria || 'Sin Categoría',
@@ -56,15 +38,15 @@ router.get('/inventory-stats', auth, isAdmin, async (req, res, next) => {
       bajo_stock: parseInt(stat.bajo_stock) || 0,
       precio_promedio: parseFloat(stat.precio_promedio) || 0
     }));
-    
+
     console.log('✅ Stats de inventario obtenidas:', processedStats.length, 'categorías');
     console.log('📊 Categorías encontradas:', processedStats.map(s => s.categoria));
-    
+
     res.json({
       success: true,
       data: processedStats
     });
-    
+
   } catch (err) {
     console.error('❌ Error obteniendo stats de inventario:', err);
     next(err);
@@ -75,9 +57,9 @@ router.get('/inventory-stats', auth, isAdmin, async (req, res, next) => {
 router.get('/activity-stats', auth, isAdmin, async (req, res, next) => {
   try {
     console.log('📈 Obteniendo estadísticas de actividad...');
-    
+
     const db = new DB();
-    
+
     // Query para obtener actividad de los últimos 30 días
     const query = `
       SELECT 
@@ -91,27 +73,27 @@ router.get('/activity-stats', auth, isAdmin, async (req, res, next) => {
       GROUP BY DATE(created_at) 
       ORDER BY fecha ASC
     `;
-    
+
     const activity = await db.execute(query);
-    
+
     console.log('📈 Actividad raw obtenida:', activity);
-    
+
     // Llenar días faltantes con 0
     const filledActivity = [];
     const today = new Date();
-    
+
     for (let i = 29; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dateStr = date.toISOString().split('T')[0];
-      
+
       const existingData = activity.find(a => {
         const activityDate = new Date(a.fecha).toISOString().split('T')[0];
         return activityDate === dateStr;
       });
-      
+
       filledActivity.push({
-        fecha: date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
+        fecha: dateStr.split('-').slice(1).reverse().join('/'),
         fecha_completa: dateStr,
         actividad: existingData ? parseInt(existingData.actividad) : 0,
         creaciones: existingData ? parseInt(existingData.creaciones) : 0,
@@ -119,14 +101,14 @@ router.get('/activity-stats', auth, isAdmin, async (req, res, next) => {
         eliminaciones: existingData ? parseInt(existingData.eliminaciones) : 0
       });
     }
-    
+
     console.log('✅ Stats de actividad procesadas:', filledActivity);
-    
+
     res.json({
       success: true,
       data: filledActivity
     });
-    
+
   } catch (err) {
     console.error('❌ Error obteniendo stats de actividad:', err);
     next(err);
@@ -137,16 +119,22 @@ router.get('/activity-stats', auth, isAdmin, async (req, res, next) => {
 router.get('/summary', auth, isAdmin, async (req, res, next) => {
   try {
     console.log('📋 Obteniendo resumen del sistema...');
-    
+
     const db = new DB();
-    
+
     // Queries paralelas para obtener resumen
     const [products, users, history] = await Promise.all([
       db.execute('SELECT COUNT(*) as total, SUM(quantity) as stock_total FROM products WHERE status = 0'),
-      db.execute('SELECT COUNT(*) as total, COUNT(CASE WHEN status = 0 THEN 1 END) as activos FROM user'),
+      // Usuarios activos: aquellos con last_access en los últimos 5 minutos
+      db.execute(`
+        SELECT 
+          COUNT(*) as total, 
+          COUNT(CASE WHEN last_access >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) THEN 1 END) as activos 
+        FROM user
+      `),
       db.execute('SELECT COUNT(*) as total FROM history WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)')
     ]);
-    
+
     const summary = {
       productos_total: products[0]?.total || 0,
       stock_total: products[0]?.stock_total || 0,
@@ -154,14 +142,14 @@ router.get('/summary', auth, isAdmin, async (req, res, next) => {
       usuarios_activos: users[0]?.activos || 0,
       actividad_semanal: history[0]?.total || 0
     };
-    
+
     console.log('✅ Resumen obtenido:', summary);
-    
+
     res.json({
       success: true,
       data: summary
     });
-    
+
   } catch (err) {
     console.error('❌ Error obteniendo resumen:', err);
     next(err);
