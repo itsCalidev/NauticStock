@@ -4,7 +4,7 @@ class Model {
   constructor() {
     // 👇 NO INICIALIZAR DB AQUÍ - Esperar a que las clases hijas definan tableName
     this.db = null;
-    console.log('✅ Model constructor called for:', this.constructor.name);
+    // console.log('✅ Model constructor called for:', this.constructor.name);
   }
 
   // 👇 NUEVO: Método para inicializar DB después de que tableName esté definido
@@ -12,17 +12,11 @@ class Model {
     if (!this.tableName) {
       throw new Error(`tableName no está definido para ${this.constructor.name}`);
     }
-    
+
     if (!this.db) {
-      try {
-        this.db = new DB(this.tableName);
-        console.log('✅ DB initialized for model:', this.constructor.name, 'table:', this.tableName);
-      } catch (err) {
-        console.error('❌ Error initializing DB in Model:', err);
-        throw err;
-      }
+      this.db = new DB(this.tableName);
     }
-    
+
     return this.db;
   }
 
@@ -49,7 +43,7 @@ class Model {
 
   async insert(data) {
     try {
-      console.log('📝 Model.insert for table:', this.tableName);
+      // console.log('📝 Model.insert for table:', this.tableName);
       const db = this.getDB();
       return await db.insert(data);
     } catch (err) {

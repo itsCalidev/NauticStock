@@ -46,14 +46,16 @@ const Login = () => {
     }
 
     try {
-      const { data } = await api.post("/login", { email, password });
+      const response = await api.post("/login", { email, password });
+      const { token, user } = response.data.data;
+
       // guardar token y datos del usuario
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("token", token);
+      localStorage.setItem("user", JSON.stringify(user));
       // configurar axios para enviar el token en futuras peticiones
       api.defaults.headers.common[
         "Authorization"
-      ] = `Bearer ${data.token}`;
+      ] = `Bearer ${token}`;
 
       setSnackbar({
         open: true,
@@ -220,38 +222,38 @@ const Login = () => {
 
       {/* Panel derecho - Imagen y logo */}
       <Box
-  sx={{
-    flex: 1,
-    backgroundColor: isDark ? "#fff" : "#1f1f1f",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",  
-    transition: "background-color 0.3s",
-    p: 4,
-    gap: 8,                   
-  }}
->
-  <Box
-    component="img"
-    src={LogoImage}
-    alt="logo"
-    sx={{
-      width: "300px",
-      objectFit: "contain",
-    }}
-  />
-  <Box
-    component="img"
-    src={LoginImage}
-    alt="escudo"
-    sx={{
-      maxWidth: "50%",
-      height: "auto",
-      filter: isDark ? "grayscale(0.2)" : "none",
-    }}
-  />
-</Box>
+        sx={{
+          flex: 1,
+          backgroundColor: isDark ? "#fff" : "#1f1f1f",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "background-color 0.3s",
+          p: 4,
+          gap: 8,
+        }}
+      >
+        <Box
+          component="img"
+          src={LogoImage}
+          alt="logo"
+          sx={{
+            width: "300px",
+            objectFit: "contain",
+          }}
+        />
+        <Box
+          component="img"
+          src={LoginImage}
+          alt="escudo"
+          sx={{
+            maxWidth: "50%",
+            height: "auto",
+            filter: isDark ? "grayscale(0.2)" : "none",
+          }}
+        />
+      </Box>
 
 
       <AccessibilitySidebar />

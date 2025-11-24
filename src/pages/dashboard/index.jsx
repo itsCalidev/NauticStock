@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Typography, Button, CircularProgress, Alert, Chip, Card, CardContent, Grid } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import Header from "../../components/Header";
@@ -6,19 +6,21 @@ import { useNavigate } from "react-router-dom";
 import api from "../../api/axiosClient";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
-  LineChart, Line, CartesianGrid, PieChart, Pie, Cell
+  LineChart, Line, CartesianGrid
 } from "recharts";
+
+const POLL_INTERVAL = 5000; // 5 segundos
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
-  
+
   const [historyData, setHistoryData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  
+
   // Estados para gráficas
   const [inventoryData, setInventoryData] = useState([]);
   const [activityData, setActivityData] = useState([]);
@@ -26,49 +28,34 @@ const Dashboard = () => {
   const [chartsLoading, setChartsLoading] = useState(true);
 
   // Colores adaptativos para gráficas
-  const chartColors = isDarkMode 
+  const chartColors = isDarkMode
     ? {
-        primary: '#90caf9',
-        secondary: '#f48fb1', 
-        grid: '#555555',
-        text: '#ffffff',
-        background: 'rgba(255,255,255,0.05)',
-        tooltipBg: '#424242',
-        lineColor: '#81c784',
-        activeDot: '#a5d6a7'
-      }
-    : {
-        primary: '#3f51b5',
-        secondary: '#f50057',
-        grid: '#e0e0e0', 
-        text: '#333333',
-        background: 'rgba(0,0,0,0.05)',
-        tooltipBg: '#ffffff',
-        lineColor: '#4caf50',
-        activeDot: '#2e7d32'
-      };
-
-  useEffect(() => {
-    // Verificar si es admin
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    setIsAdmin(user.roleId === 1);
-    
-    // Cargar datos
-    if (user.roleId === 1) {
-      fetchRecentHistory();
-      fetchChartData();
-    } else {
-      setLoading(false);
-      setChartsLoading(false);
+      primary: '#90caf9',
+      secondary: '#f48fb1',
+      grid: '#555555',
+      text: '#ffffff',
+      background: 'rgba(255,255,255,0.05)',
+      tooltipBg: '#424242',
+      lineColor: '#81c784',
+      activeDot: '#a5d6a7'
     }
-  }, []);
+    : {
+      primary: '#3f51b5',
+      secondary: '#f50057',
+      grid: '#e0e0e0',
+      text: '#333333',
+      background: 'rgba(0,0,0,0.05)',
+      tooltipBg: '#ffffff',
+      lineColor: '#4caf50',
+      activeDot: '#2e7d32'
+    };
 
-  const fetchChartData = async () => {
+  const fetchChartData = useCallback(async ({ silent = false } = {}) => {
     try {
-      setChartsLoading(true);
-      
-      console.log('📊 Cargando datos del dashboard...');
-      
+      if (!silent) setChartsLoading(true);
+
+      console.log(`📊 Cargando datos del dashboard... (${silent ? 'silencioso' : 'completo'})`);
+
       // Obtener datos de las APIs en paralelo
       const [inventoryResponse, activityResponse, summaryResponse] = await Promise.all([
         api.get('/api/dashboard/inventory-stats'),
@@ -78,42 +65,32 @@ const Dashboard = () => {
 
       // Procesar datos de inventario
       const inventoryStats = inventoryResponse.data?.data || [];
-      console.log('📦 Datos de inventario:', inventoryStats);
       setInventoryData(inventoryStats);
 
-      // Mejorar logging de actividad
+      // Procesar datos de actividad
       const activityStats = activityResponse.data?.data || [];
-      console.log('📈 Datos de actividad RAW:', activityStats);
-      console.log('📈 Total de días con datos:', activityStats.filter(d => d.actividad > 0).length);
-      
-      // Verificar si hay actividad real
-      const totalActivity = activityStats.reduce((sum, day) => sum + day.actividad, 0);
-      console.log('📈 Total de actividad en 30 días:', totalActivity);
-      
       setActivityData(activityStats);
 
       // Procesar resumen
       const summary = summaryResponse.data?.data || {};
-      console.log('📋 Resumen del sistema:', summary);
       setSummaryData(summary);
-      
+
     } catch (err) {
       console.error('❌ Error cargando datos de dashboard:', err);
-      console.error('❌ Detalles del error:', err.response?.data);
-      setError('Error al cargar datos del dashboard: ' + (err.response?.data?.error || err.message));
+      if (!silent) setError('Error al cargar datos del dashboard: ' + (err.response?.data?.error || err.message));
     } finally {
-      setChartsLoading(false);
+      if (!silent) setChartsLoading(false);
     }
-  };
+  }, []);
 
-  const fetchRecentHistory = async () => {
+  const fetchRecentHistory = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('Dashboard: Obteniendo historial reciente...');
+      if (!silent) setLoading(true);
+      if (!silent) setError(null);
+
+      console.log(`Dashboard: Obteniendo historial reciente... (${silent ? 'silencioso' : 'completo'})`);
       const response = await api.get('/api/history');
-      
+
       // Procesar respuesta
       let dataArray = [];
       if (Array.isArray(response.data)) {
@@ -121,7 +98,7 @@ const Dashboard = () => {
       } else if (response.data && Array.isArray(response.data.data)) {
         dataArray = response.data.data;
       }
-      
+
       // Tomar solo los últimos 10 registros y mapear
       const recent = dataArray.slice(0, 10).map(log => ({
         id: log.id,
@@ -136,41 +113,102 @@ const Dashboard = () => {
         quien: log.performed_by_name || 'Sistema',
         descripcion: log.description || 'Sin descripción'
       }));
-      
+
       setHistoryData(recent);
-      console.log('Dashboard: Historial cargado:', recent.length, 'registros');
-      
+
     } catch (err) {
       console.error('Error cargando historial:', err);
-      setError('Error al cargar el historial');
+      if (!silent) setError('Error al cargar el historial');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, []);
+
+  // Carga inicial
+  useEffect(() => {
+    // Verificar si es admin
+    let user = {};
+    try {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser && storedUser !== "undefined") {
+        user = JSON.parse(storedUser);
+      }
+    } catch (e) {
+      console.error("Error parsing user from localStorage", e);
+      localStorage.removeItem("user");
+    }
+    setIsAdmin(user.roleId === 1);
+
+    // Cargar datos
+    if (user.roleId === 1) {
+      fetchRecentHistory();
+      fetchChartData();
+    } else {
+      setLoading(false);
+      setChartsLoading(false);
+    }
+  }, [fetchChartData, fetchRecentHistory]);
+
+  // Polling y Event Listeners
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    // Polling
+    const intervalId = setInterval(() => {
+      fetchRecentHistory({ silent: true });
+      fetchChartData({ silent: true });
+    }, POLL_INTERVAL);
+
+    // Event Handlers
+    const handleUpdate = () => {
+      console.log('📢 Evento recibido en Dashboard, actualizando...');
+      fetchRecentHistory({ silent: true });
+      fetchChartData({ silent: true });
+    };
+
+    // Eventos de ventana
+    window.addEventListener("productCreated", handleUpdate);
+    window.addEventListener("productUpdated", handleUpdate);
+    window.addEventListener("productDeleted", handleUpdate);
+    window.addEventListener("productStatusChanged", handleUpdate);
+    window.addEventListener("stockChanged", handleUpdate);
+
+    // Eventos de storage (cross-tab)
+    const handleStorageChange = (e) => {
+      if (e.key === 'productChanged' && e.newValue !== e.oldValue) {
+        console.log('📢 Storage event: productChanged');
+        handleUpdate();
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener("productCreated", handleUpdate);
+      window.removeEventListener("productUpdated", handleUpdate);
+      window.removeEventListener("productDeleted", handleUpdate);
+      window.removeEventListener("productStatusChanged", handleUpdate);
+      window.removeEventListener("stockChanged", handleUpdate);
+      window.removeEventListener("storage", handleStorageChange);
+    };
+  }, [isAdmin, fetchRecentHistory, fetchChartData]);
+
 
   // Función mejorada para colores de acciones con mejor contraste
   const getActionColor = (accion) => {
     const actionLower = accion.toLowerCase();
-    
+
     if (actionLower.includes('crear')) return 'success';
     if (actionLower.includes('actualizar') || actionLower.includes('editar')) return isDarkMode ? 'info' : 'primary';
     if (actionLower.includes('eliminar')) return 'error';
     if (actionLower.includes('login') || actionLower.includes('logout')) return 'secondary';
     if (actionLower.includes('stock')) return 'warning';
     if (actionLower.includes('habilitar') || actionLower.includes('rehabilitar')) return 'info';
-    
+
     return 'default';
   };
-
   const handleVerMas = () => {
     navigate('/history');
-  };
-
-  const handleRefresh = () => {
-    if (isAdmin) {
-      fetchRecentHistory();
-      fetchChartData();
-    }
   };
 
   return (
@@ -178,48 +216,6 @@ const Dashboard = () => {
       {/* HEADER */}
       <Box display="flex" justifyContent="space-between" alignItems="center">
         <Header title="DASHBOARD" subtitle="Resumen del sistema NauticStock" />
-        {isAdmin && (
-          <Button
-            variant="outlined"
-            onClick={handleRefresh}
-            disabled={loading || chartsLoading}
-            sx={{
-              borderColor: isDarkMode ? '#90caf9' : '#1976d2',
-              color: isDarkMode ? '#90caf9' : '#1976d2',
-              backgroundColor: isDarkMode ? 'rgba(144, 202, 249, 0.04)' : 'transparent',
-              fontWeight: 'bold',
-              minWidth: '120px',
-              height: '40px',
-              
-              '&:hover': {
-                borderColor: isDarkMode ? '#64b5f6' : '#1565c0',
-                backgroundColor: isDarkMode ? 'rgba(144, 202, 249, 0.08)' : 'rgba(25, 118, 210, 0.04)',
-                color: isDarkMode ? '#64b5f6' : '#1565c0',
-              },
-              
-              '&:disabled': {
-                borderColor: isDarkMode ? '#555555' : '#e0e0e0',
-                color: isDarkMode ? '#888888' : '#cccccc',
-                backgroundColor: isDarkMode ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)',
-              }
-            }}
-          >
-            {(loading || chartsLoading) ? (
-              <>
-                <CircularProgress 
-                  size={20} 
-                  sx={{ 
-                    color: isDarkMode ? '#90caf9' : '#1976d2',
-                    mr: 1 
-                  }} 
-                />
-                Cargando...
-              </>
-            ) : (
-              "Actualizar"
-            )}
-          </Button>
-        )}
       </Box>
 
       {/* TARJETAS DE RESUMEN */}
@@ -229,7 +225,7 @@ const Dashboard = () => {
             <Card>
               <CardContent>
                 <Typography color="textSecondary" gutterBottom>
-                  Productos Total
+                  Total de Productos
                 </Typography>
                 <Typography variant="h4">
                   {chartsLoading ? <CircularProgress size={24} /> : summaryData.productos_total || 0}
@@ -241,7 +237,7 @@ const Dashboard = () => {
             <Card>
               <CardContent>
                 <Typography color="textSecondary" gutterBottom>
-                  Stock Total
+                  Total de Stock
                 </Typography>
                 <Typography variant="h4">
                   {chartsLoading ? <CircularProgress size={24} /> : summaryData.stock_total || 0}
@@ -273,14 +269,14 @@ const Dashboard = () => {
               </CardContent>
             </Card>
           </Grid>
-        </Grid>
+        </Grid >
       )}
 
       {/* CONTENEDOR PRINCIPAL - AUMENTADO */}
       <Box display="flex" mt="0px" gap="20px" height="800px"> {/* Aumentado de 700px a 800px */}
         {/* Gráficas lado izquierdo - MÁS ESPACIO */}
         <Box flex={1.5} display="flex" flexDirection="column" justifyContent="space-between" alignItems="center">
-          
+
           {/* 📊 GRÁFICA DE INVENTARIO POR CATEGORÍA - MÁS ALTURA */}
           <Box width="100%" height="60%" display="flex" flexDirection="column" alignItems="center"> {/* Aumentado de 50% a 60% */}
             <Typography variant="h6" gutterBottom sx={{ color: chartColors.text, fontWeight: 'bold' }}>
@@ -304,13 +300,13 @@ const Dashboard = () => {
               </Box>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart 
-                  data={inventoryData} 
+                <BarChart
+                  data={inventoryData}
                   margin={{ top: 20, right: 30, left: 20, bottom: 120 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-                  <XAxis 
-                    dataKey="categoria" 
+                  <XAxis
+                    dataKey="categoria"
                     tick={{ fontSize: 11, fill: chartColors.text }}
                     angle={-45}
                     textAnchor="end"
@@ -318,12 +314,12 @@ const Dashboard = () => {
                     stroke={chartColors.text}
                     interval={0}
                   />
-                  <YAxis 
-                    tick={{ fontSize: 12, fill: chartColors.text }} 
+                  <YAxis
+                    tick={{ fontSize: 12, fill: chartColors.text }}
                     stroke={chartColors.text}
                     width={60}
                   />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{
                       backgroundColor: chartColors.tooltipBg,
                       border: `1px solid ${chartColors.grid}`,
@@ -332,27 +328,27 @@ const Dashboard = () => {
                       fontSize: '14px'
                     }}
                     formatter={(value, name) => [
-                      name === 'cantidad' ? `${value} unidades` : `${value} productos`,
-                      name === 'cantidad' ? 'Total en Stock' : 'Productos Distintos'
+                      name === 'Total en Stock' ? `${value} unidades` : `${value} productos`,
+                      name
                     ]}
                     labelFormatter={(label) => `Categoría: ${label}`}
                   />
-                  <Legend 
-                    wrapperStyle={{ 
+                  <Legend
+                    wrapperStyle={{
                       color: chartColors.text,
                       fontSize: '14px',
                       paddingTop: '10px'
-                    }} 
+                    }}
                   />
-                  <Bar 
-                    dataKey="cantidad" 
+                  <Bar
+                    dataKey="cantidad"
                     fill={chartColors.primary}
                     name="Total en Stock"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={60}
                   />
-                  <Bar 
-                    dataKey="productos" 
+                  <Bar
+                    dataKey="productos"
                     fill={chartColors.secondary}
                     name="Productos Distintos"
                     radius={[4, 4, 0, 0]}
@@ -388,20 +384,20 @@ const Dashboard = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={activityData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}> {/* Reducido bottom margin */}
                   <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-                  <XAxis 
-                    dataKey="fecha" 
+                  <XAxis
+                    dataKey="fecha"
                     tick={{ fontSize: 10, fill: chartColors.text }}
                     angle={-45}
                     textAnchor="end"
                     height={60}
                     stroke={chartColors.text}
                   />
-                  <YAxis 
-                    tick={{ fontSize: 11, fill: chartColors.text }} 
+                  <YAxis
+                    tick={{ fontSize: 11, fill: chartColors.text }}
                     stroke={chartColors.text}
                     width={45}
                   />
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{
                       backgroundColor: chartColors.tooltipBg,
                       border: `1px solid ${chartColors.grid}`,
@@ -412,15 +408,15 @@ const Dashboard = () => {
                     formatter={(value, name) => [`${value} operaciones`, 'Actividad']}
                     labelFormatter={(label) => `Fecha: ${label}`}
                   />
-                  <Legend 
-                    wrapperStyle={{ 
+                  <Legend
+                    wrapperStyle={{
                       color: chartColors.text,
                       fontSize: '13px' // Reducido
-                    }} 
+                    }}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="actividad" 
+                  <Line
+                    type="monotone"
+                    dataKey="actividad"
                     stroke={chartColors.lineColor}
                     strokeWidth={2}
                     dot={{ fill: chartColors.lineColor, strokeWidth: 2, r: 3 }}
@@ -442,8 +438,8 @@ const Dashboard = () => {
           color="#A5D6A7"
           boxShadow="0 4px 15px rgba(0, 0, 0, 0.5)"
           fontFamily="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
-          overflowY="auto"    
-          height="100%" 
+          overflowY="auto"
+          height="100%"
           maxHeight="100%"
           display="flex"
           flexDirection="column"
@@ -471,9 +467,9 @@ const Dashboard = () => {
               <Alert severity="error" sx={{ mb: 2 }}>
                 {error}
               </Alert>
-              <Button 
-                onClick={fetchRecentHistory} 
-                variant="contained" 
+              <Button
+                onClick={fetchRecentHistory}
+                variant="contained"
                 color="primary"
                 size="small"
               >
@@ -488,11 +484,11 @@ const Dashboard = () => {
             </Box>
           ) : (
             <>
-              <TableContainer 
-                component={Paper} 
-                sx={{ 
-                  backgroundColor: "rgba(255,255,255,0.1)", 
-                  flexGrow: 1,       
+              <TableContainer
+                component={Paper}
+                sx={{
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  flexGrow: 1,
                   overflowY: "auto",
                   mb: 2
                 }}
@@ -516,26 +512,26 @@ const Dashboard = () => {
                   </TableHead>
                   <TableBody>
                     {historyData.map((row) => (
-                      <TableRow 
-                        key={row.id} 
-                        hover 
-                        sx={{ 
+                      <TableRow
+                        key={row.id}
+                        hover
+                        sx={{
                           cursor: "pointer",
                           "&:hover": {
                             backgroundColor: "rgba(255,255,255,0.1)"
                           }
                         }}
                       >
-                        <TableCell sx={{ 
-                          color: "#C8E6C9", 
+                        <TableCell sx={{
+                          color: "#C8E6C9",
                           fontSize: "0.7rem",
                           fontFamily: "monospace",
                           minWidth: "100px"
                         }}>
                           {row.fecha}
                         </TableCell>
-                        <TableCell sx={{ 
-                          color: "#C8E6C9", 
+                        <TableCell sx={{
+                          color: "#C8E6C9",
                           fontSize: "0.7rem",
                           minWidth: "100px"
                         }}>
@@ -555,15 +551,15 @@ const Dashboard = () => {
                             }}
                           />
                         </TableCell>
-                        <TableCell sx={{ 
-                          color: "#C8E6C9", 
+                        <TableCell sx={{
+                          color: "#C8E6C9",
                           fontSize: "0.7rem",
                           fontWeight: "bold"
                         }}>
                           {row.quien}
                         </TableCell>
-                        <TableCell sx={{ 
-                          color: "#C8E6C9", 
+                        <TableCell sx={{
+                          color: "#C8E6C9",
                           fontSize: "0.7rem",
                           maxWidth: "150px",
                           overflow: "hidden",
@@ -603,7 +599,7 @@ const Dashboard = () => {
           )}
         </Box>
       </Box>
-    </Box>
+    </Box >
   );
 };
 

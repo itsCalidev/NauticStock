@@ -17,13 +17,14 @@ api.interceptors.response.use(
     const status = err.response?.status;
     if (status === 401 || status === 403) {
       // mostramos el mensaje y luego limpiamos
-      const msg = err.response.data?.error || "No autorizado";
+      // const msg = err.response.data?.error || "No autorizado";
       // opcional: podrías setear un snackbar global aquí
       setTimeout(() => {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         delete api.defaults.headers.common.Authorization;
-        window.location.href = "/login";  // redirige al login
+        // Emitir evento personalizado en lugar de recargar
+        window.dispatchEvent(new Event("auth:session-expired"));
       }, 2000);
     }
     return Promise.reject(err);

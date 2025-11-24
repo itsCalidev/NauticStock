@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ProSidebar, Menu, MenuItem } from "react-pro-sidebar";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import "react-pro-sidebar/dist/css/styles.css";
@@ -7,7 +7,7 @@ import { Token } from "../../theme";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import InvertColorsIcon from "@mui/icons-material/InvertColors";
+// import InvertColorsIcon from "@mui/icons-material/InvertColors";
 import RestartAltIcon from "@mui/icons-material/RestartAlt";
 
 // Nuevos iconos para funcionalidades
@@ -33,11 +33,11 @@ const AccessibilitySidebar = () => {
   const theme = useTheme();
   const colors = Token(theme.palette.mode);
 
-  const fonts = [
+  const fonts = useMemo(() => [
     "'Arial', sans-serif",
     "'Comic Sans MS', cursive, sans-serif",
     "'Courier New', monospace",
-  ];
+  ], []);
 
   useEffect(() => {
     // Ajustar tamaño de fuente base (16px por defecto)
@@ -115,25 +115,25 @@ const AccessibilitySidebar = () => {
   return (
     <>
       <IconButton
-  onClick={() => setIsOpen(!isOpen)}
-  sx={{
-    position: "fixed",
-    bottom: 60,  // Subido desde 20 a 60
-    right: 20,
-    backgroundColor: colors.blueAccent[600],
-    color: "#fff",
-    width: 56,
-    height: 56,
-    zIndex: 1000,
-    boxShadow: 3,
-    "&:hover": {
-      backgroundColor: colors.blueAccent[700],
-    },
-  }}
-  aria-label="Configuración de accesibilidad"
->
-  <SettingsIcon />
-</IconButton>
+        onClick={() => setIsOpen(!isOpen)}
+        sx={{
+          position: "fixed",
+          bottom: 60,  // Subido desde 20 a 60
+          right: 20,
+          backgroundColor: colors.blueAccent[600],
+          color: "#fff",
+          width: 56,
+          height: 56,
+          zIndex: 1000,
+          boxShadow: 3,
+          "&:hover": {
+            backgroundColor: colors.blueAccent[700],
+          },
+        }}
+        aria-label="Configuración de accesibilidad"
+      >
+        <SettingsIcon />
+      </IconButton>
 
       <Box
         sx={{

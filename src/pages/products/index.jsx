@@ -1,52 +1,80 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { 
-  Button, 
-  Box, 
-  Alert, 
-  CircularProgress, 
-  IconButton, 
-  Tooltip,
+
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  Button,
+  Box,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
-  Typography
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Typography,
+  useTheme,
+  IconButton,
+  Tooltip,
+  CircularProgress,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
-import AddCircleIcon from "@mui/icons-material/AddCircle";
-import RemoveCircleIcon from "@mui/icons-material/RemoveCircle";
 import BlockIcon from "@mui/icons-material/Block";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import { DataGrid, GridToolbar } from "@mui/x-data-grid";
-import { Token } from "../../theme";
+import AddCircleIcon from "@mui/icons-material/AddCircle";
+import RemoveCircleIcon from "@mui/icons-material/RemoveCircle";
 import Header from "../../components/Header";
-import { useTheme } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+import { Token } from "../../theme";
 import api from '../../api/axiosClient';
-// 👇 NUEVOS IMPORTS PARA BÚSQUEDA
 import { useSearch } from '../../contexts/SearchContext';
 import SearchHighlighter from '../../components/SearchHighlighter';
+import AppSnackbar from "../../components/AppSnackbar";
+import { Formik } from "formik";
+import * as yup from "yup";
 
-const Products = () => {
+const POLL_INTERVAL = 5000; // cada 5 segundos
+
+const productSchema = yup.object().shape({
+  part_number: yup.string().required("Requerido"),
+  description: yup.string().required("Requerido"),
+  price: yup.number().required("Requerido").positive("Debe ser positivo"),
+  quantity: yup.number().required("Requerido").min(0, "No puede ser negativo"), // Renamed from stock
+  min_stock: yup.number().required("Requerido").min(0, "No puede ser negativo"),
+  max_stock: yup.number().required("Requerido").moreThan(yup.ref('min_stock'), "Debe ser mayor al stock mínimo"),
+  categoryId: yup.number().required("Requerido"),
+  brandId: yup.number().required("Requerido"),
+  providerId: yup.number().required("Requerido"),
+  locationId: yup.number().required("Requerido"),
+});
+
+export default function Products() {
   const theme = useTheme();
-  const colors = Token(theme.palette.mode);
-  const navigate = useNavigate();
-
-  const safeColors = colors || {
-    primary: { 400: '#f5f5f5', 300: '#424242' },
-    greenAccent: { 300: '#4caf50', 200: '#4caf50' },
-    blueAccent: { 700: '#1976d2' },
-    grey: { 100: '#f5f5f5', 100: '#ffffff' }
-  };
-  
-  
+  const colors = useMemo(() => Token(theme.palette.mode), [theme.palette.mode]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showInactive, setShowInactive] = useState(true);
+
+  // Estados para dropdowns
+  const [categories, setCategories] = useState([]);
+  const [brands, setBrands] = useState([]);
+  const [providers, setProviders] = useState([]);
+  const [locations, setLocations] = useState([]);
+
+  // Estados para diálogos
+  const [openDialog, setOpenDialog] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const [stockDialog, setStockDialog] = useState({
     open: false,
     productId: null,
@@ -62,60 +90,67 @@ const Products = () => {
     productName: ''
   });
 
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showInactive, setShowInactive] = useState(true);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
 
-  // 👇 NUEVO: Contexto de búsqueda
+  // Contexto de búsqueda
   const { searchTerm, isSearching } = useSearch();
 
-  // 👇 CORREGIR el filteredProducts useMemo
-const filteredProducts = useMemo(() => {
-  let filtered = showInactive ? products : products.filter(product => product.status === 0);
-  
-  // 👇 NUEVO: Aplicar filtro de búsqueda CON VALIDACIONES SEGURAS
-  if (isSearching && searchTerm) {
-    filtered = filtered.filter(product => 
-      (product.name && product.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (product.description && product.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (product.category && product.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (product.type && product.type.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (product.provider && product.provider.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (product.location && product.location.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-  }
-  
-  return filtered;
-}, [products, showInactive, isSearching, searchTerm]);
-  
+  // Cargar datos auxiliares (dropdowns)
+  useEffect(() => {
+    const fetchAuxData = async () => {
+      try {
+        const [catsRes, brandsRes, provsRes, locsRes] = await Promise.all([
+          api.get("/api/categories"),
+          api.get("/api/brands"),
+          api.get("/api/providers"),
+          api.get("/api/locations")
+        ]);
+
+        setCategories(Array.isArray(catsRes.data) ? catsRes.data : catsRes.data?.data || []);
+        setBrands(Array.isArray(brandsRes.data) ? brandsRes.data : brandsRes.data?.data || []);
+        setProviders(Array.isArray(provsRes.data) ? provsRes.data : provsRes.data?.data || []);
+        setLocations(Array.isArray(locsRes.data) ? locsRes.data : locsRes.data?.data || []);
+
+      } catch (err) {
+        console.error("Error cargando datos auxiliares:", err);
+      }
+    };
+    fetchAuxData();
+  }, []);
+
+  // FilteredProducts useMemo
+  const filteredProducts = useMemo(() => {
+    let filtered = showInactive ? products : products.filter(product => product.status === 0);
+
+    if (isSearching && searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      filtered = filtered.filter(product =>
+        (product.name && product.name.toLowerCase().includes(lowerTerm)) ||
+        (product.description && product.description.toLowerCase().includes(lowerTerm)) ||
+        (product.category && product.category.toLowerCase().includes(lowerTerm)) ||
+        (product.type && product.type.toLowerCase().includes(lowerTerm)) ||
+        (product.provider && product.provider.toLowerCase().includes(lowerTerm)) ||
+        (product.location && product.location.toLowerCase().includes(lowerTerm))
+      );
+    }
+
+    return filtered;
+  }, [products, showInactive, isSearching, searchTerm]);
+
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     setIsAdmin(user.roleId === 1);
   }, []);
 
-  useEffect(() => {
-    loadProducts();
-  }, []);
-
-  useEffect(() => {
-    const handleProductCreated = () => {
-      loadProducts();
-    };
-
-    window.addEventListener("productCreated", handleProductCreated);
-    return () => {
-      window.removeEventListener("productCreated", handleProductCreated);
-    };
-  }, []);
-
-    const loadProducts = async () => {
+  const loadProducts = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('Frontend: Cargando productos...');
+      if (!silent) setLoading(true);
+
       const response = await api.get('/api/products');
-      console.log('Frontend: Respuesta recibida:', response.data);
-      
       const transformedData = (response.data.data || []).map(product => ({
         id: product.id,
         name: product.part_number || 'Sin código',
@@ -128,83 +163,90 @@ const filteredProducts = useMemo(() => {
         location: product.location || 'Sin ubicación',
         min_stock: product.min_stock || 0,
         max_stock: product.max_stock || 0,
-        status: product.status || 0
+        status: product.status || 0,
+        // Guardar valores originales para edición
+        original: product
       }));
-      
-      console.log('Frontend: Datos transformados:', transformedData.length, 'productos');
+
       setProducts(transformedData);
     } catch (err) {
       const errorMessage = err.response?.data?.error || err.message || 'Error desconocido';
-      setError('Error al cargar productos: ' + errorMessage);
-      console.error('Error loading products:', err);
+      console.error('Error al cargar productos: ' + errorMessage);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
-
-  // 👇 NUEVO: Agregar polling automático para sincronizar entre sesiones
-  useEffect(() => {
-    loadProducts(); // Carga inicial    
   }, []);
 
-  // 👇 NUEVO: Escuchar eventos de otras ventanas/pestañas
+  // Carga inicial y polling
   useEffect(() => {
-    const handleProductCreated = () => {
-      console.log('📢 Evento recibido: productCreated');
-      loadProducts();
-    };
+    loadProducts();
+    const intervalId = setInterval(() => loadProducts({ silent: true }), POLL_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [loadProducts]);
 
-    const handleProductUpdated = () => {
-      console.log('📢 Evento recibido: productUpdated');
-      loadProducts();
-    };
+  // Escuchar eventos de otras ventanas/pestañas
+  useEffect(() => {
+    const handleReload = () => loadProducts({ silent: true });
 
-    const handleProductDeleted = () => {
-      console.log('📢 Evento recibido: productDeleted');
-      loadProducts();
-    };
+    window.addEventListener("productCreated", handleReload);
+    window.addEventListener("productUpdated", handleReload);
+    window.addEventListener("productDeleted", handleReload);
+    window.addEventListener("productStatusChanged", handleReload);
+    window.addEventListener("stockChanged", handleReload);
 
-    const handleProductStatusChanged = () => {
-      console.log('📢 Evento recibido: productStatusChanged');
-      loadProducts();
-    };
-
-    const handleStockChanged = () => {
-      console.log('📢 Evento recibido: stockChanged');
-      loadProducts();
-    };
-
-    // 👇 Eventos de ventana (para otras pestañas del mismo navegador)
-    window.addEventListener("productCreated", handleProductCreated);
-    window.addEventListener("productUpdated", handleProductUpdated);
-    window.addEventListener("productDeleted", handleProductDeleted);
-    window.addEventListener("productStatusChanged", handleProductStatusChanged);
-    window.addEventListener("stockChanged", handleStockChanged);
-
-    // 👇 Eventos de storage (para otros navegadores/dispositivos)
     const handleStorageChange = (e) => {
-      if (e.key === 'productChanged' && e.newValue !== e.oldValue) {
-        console.log('📢 Storage event: productChanged');
-        loadProducts();
-      }
+      if (e.key === 'productChanged') handleReload();
     };
     window.addEventListener("storage", handleStorageChange);
 
     return () => {
-      window.removeEventListener("productCreated", handleProductCreated);
-      window.removeEventListener("productUpdated", handleProductUpdated);
-      window.removeEventListener("productDeleted", handleProductDeleted);
-      window.removeEventListener("productStatusChanged", handleProductStatusChanged);
-      window.removeEventListener("stockChanged", handleStockChanged);
+      window.removeEventListener("productCreated", handleReload);
+      window.removeEventListener("productUpdated", handleReload);
+      window.removeEventListener("productDeleted", handleReload);
+      window.removeEventListener("productStatusChanged", handleReload);
+      window.removeEventListener("stockChanged", handleReload);
       window.removeEventListener("storage", handleStorageChange);
     };
+  }, [loadProducts]);
+
+  const handleOpenDialog = useCallback((product = null) => {
+    setEditingProduct(product);
+    setOpenDialog(true);
   }, []);
 
-  const handleEdit = (productId) => {
-    navigate(`/products/${productId}/edit`);
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setEditingProduct(null);
   };
 
-  const handleStockChange = (productId, productName, currentStock, operation) => {
+  const handleFormSubmit = async (values, { resetForm }) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      if (editingProduct) {
+        await api.put(`/api/products/${editingProduct.id}`, values);
+        setSnackbar({ open: true, message: "Producto actualizado exitosamente", severity: "success" });
+      } else {
+        await api.post("/api/products", { ...values, status: 0 });
+        setSnackbar({ open: true, message: "Producto creado exitosamente", severity: "success" });
+      }
+
+      handleCloseDialog();
+      resetForm();
+      loadProducts();
+      window.dispatchEvent(new Event(editingProduct ? "productUpdated" : "productCreated"));
+
+    } catch (err) {
+      console.error('Error guardando producto:', err);
+      const msg = err.response?.data?.error || err.response?.data?.message || "Error al guardar producto";
+      setSnackbar({ open: true, message: msg, severity: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleStockChange = useCallback((productId, productName, currentStock, operation) => {
     setStockDialog({
       open: true,
       productId,
@@ -213,457 +255,63 @@ const filteredProducts = useMemo(() => {
       operation,
       amount: 1
     });
-  };
+  }, []);
 
-  const handleStockConfirm = async () => {
+  const handleStockConfirm = useCallback(async () => {
     try {
       const { productId, operation, amount, currentStock } = stockDialog;
-      
-      let newStock;
-      if (operation === 'add') {
-        newStock = currentStock + parseInt(amount);
-      } else {
-        newStock = Math.max(0, currentStock - parseInt(amount));
+      const newStock = operation === 'add' ? currentStock + amount : currentStock - amount;
+
+      if (newStock < 0) {
+        setSnackbar({ open: true, message: "El stock no puede ser negativo", severity: "error" });
+        return;
       }
 
-      await api.put(`/api/products/${productId}`, {
-        quantity: newStock
-      });
-
-      setStockDialog({ open: false, productId: null, productName: '', currentStock: 0, operation: 'add', amount: 1 });
+      await api.put(`/api/products/${productId}`, { quantity: newStock });
+      setSnackbar({ open: true, message: "Stock actualizado exitosamente", severity: "success" });
+      setStockDialog(prev => ({ ...prev, open: false }));
       loadProducts();
-      
-      // 👇 NUEVO: Disparar eventos para sincronización
       window.dispatchEvent(new Event("stockChanged"));
-      localStorage.setItem('productChanged', Date.now().toString());
-      
     } catch (err) {
-      console.error('Error al actualizar stock:', err);
-      setError('Error al actualizar stock: ' + (err.response?.data?.error || err.message));
+      console.error('Error actualizando stock:', err);
+      setSnackbar({ open: true, message: "Error al actualizar stock", severity: "error" });
     }
-  };
+  }, [stockDialog, loadProducts]);
 
-  const handleToggleStatus = async (productId, currentStatus) => {
+  const handleToggleStatus = useCallback(async (id, currentStatus) => {
     try {
       const newStatus = currentStatus === 0 ? 1 : 0;
-      const action = newStatus === 0 ? 'rehabilitó' : 'deshabilitó';
-      
-      console.log(`${action} producto ${productId}: ${currentStatus} → ${newStatus}`);
-      
-      await api.put(`/api/products/${productId}`, {
-        status: newStatus
-      });
-      
-      setError(null);
+      await api.put(`/api/products/${id}`, { status: newStatus });
+      setSnackbar({ open: true, message: `Producto ${newStatus === 0 ? 'habilitado' : 'deshabilitado'}`, severity: "success" });
       loadProducts();
-      
-      // 👇 NUEVO: Disparar eventos para sincronización
       window.dispatchEvent(new Event("productStatusChanged"));
-      localStorage.setItem('productChanged', Date.now().toString());
-      
-      console.log(`Producto ${action} exitosamente`);
     } catch (err) {
-      console.error('Error al cambiar estado:', err);
-      setError(`Error al ${currentStatus === 0 ? 'deshabilitar' : 'rehabilitar'} producto: ` + (err.response?.data?.error || err.message));
+      console.error('Error cambiando estado:', err);
+      setSnackbar({ open: true, message: "Error al cambiar estado", severity: "error" });
+    }
+  }, [loadProducts]);
+
+  const handleDelete = async () => {
+    try {
+      await api.delete(`/api/products/${deleteDialog.productId}`);
+      setSnackbar({ open: true, message: "Producto eliminado exitosamente", severity: "success" });
+      setDeleteDialog({ open: false, productId: null, productName: '' });
+      loadProducts();
+      window.dispatchEvent(new Event("productDeleted"));
+    } catch (err) {
+      console.error('Error eliminando producto:', err);
+      setSnackbar({ open: true, message: "Error al eliminar producto", severity: "error" });
     }
   };
 
-const handleDeleteConfirm = async () => {
-  try {
-    const { productId } = deleteDialog;
-    console.log('🗑️ Eliminando producto:', productId);
-    
-    await api.delete(`/api/products/${productId}`);
-    
-    console.log('✅ Producto eliminado exitosamente');
-    setDeleteDialog({ open: false, productId: null, productName: '' });
-    
-    // Recargar productos
-    loadProducts();
-    
-    // 👇 MEJORADO: Disparar múltiples eventos para sincronización
-    window.dispatchEvent(new Event("productDeleted"));
-    localStorage.setItem('productChanged', Date.now().toString());
-    
-  } catch (err) {
-    console.error('Error al eliminar producto:', err);
-    setError('Error al eliminar producto: ' + (err.response?.data?.error || err.message));
-  }
-};
+  const getStockStyle = useCallback((stock, minStock) => {
+    const stockValue = Number(stock);
+    if (stockValue <= 0) return { color: colors.redAccent[500], fontWeight: 'bold' };
+    if (stockValue <= minStock) return { color: colors.blueAccent[500], fontWeight: 'bold' };
+    return {};
+  }, [colors]);
 
-  const getStockStyle = (stockValue, minStock) => {
-    const safeColors = colors || {};
-    
-    let color = safeColors.greenAccent?.[500] || '#4caf50';
-    let backgroundColor = 'transparent';
-    
-    if (stockValue <= 0) {
-      color = safeColors.redAccent?.[500] || '#f44336';
-      backgroundColor = safeColors.redAccent?.[900] || '#b71c1c';
-    } else if (stockValue <= minStock) {
-      color = safeColors.orangeAccent?.[500] || '#ff9800';
-      backgroundColor = safeColors.orangeAccent?.[900] || '#e65100';
-    }
-    
-    return { color, backgroundColor };
-  };
-
-  // 👇 MODIFICADO: Columnas con SearchHighlighter
-  const columns = useMemo(() => [
-    { 
-      field: "id", 
-      headerName: "ID", 
-      width: 70,
-      minWidth: 50,
-      headerAlign: 'center',
-      align: 'center',
-    },
-    { 
-      field: "name", 
-      headerName: "Código/Parte", 
-      width: 150,
-      minWidth: 120,
-      flex: 0.8,
-      cellClassName: "name-column--cell",
-      renderCell: (params) => {
-        const isActive = params.row.status === 0;
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            height: '100%',
-            fontWeight: 'bold',
-            opacity: isActive ? 1 : 0.5,
-            textDecoration: isActive ? 'none' : 'line-through'
-          }}>
-            {/* 👇 NUEVO: Usar SearchHighlighter */}
-            <SearchHighlighter 
-              text={params.value} 
-              searchTerm={searchTerm}
-            />
-            {!isActive && (
-              <Box 
-                component="span" 
-                sx={{ 
-                  ml: 1, 
-                  px: 1, 
-                  py: 0.2, 
-                  bgcolor: 'error.main', 
-                  color: 'white', 
-                  borderRadius: 1, 
-                  fontSize: '0.7rem' 
-                }}
-              >
-                INACTIVO
-              </Box>
-            )}
-          </Box>
-        );
-      }
-    },
-    { 
-      field: "description", 
-      headerName: "Descripción", 
-      width: 300,
-      minWidth: 200,
-      flex: 1.5,
-      renderCell: (params) => {
-        const isActive = params.row.status === 0;
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            height: '100%',
-            padding: '8px 4px',
-            whiteSpace: 'normal', 
-            wordWrap: 'break-word',
-            lineHeight: 1.3,
-            fontSize: '0.875rem',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            opacity: isActive ? 1 : 0.5
-          }}>
-            {/* 👇 NUEVO: Usar SearchHighlighter */}
-            <SearchHighlighter 
-              text={params.value} 
-              searchTerm={searchTerm}
-            />
-          </Box>
-        );
-      }
-    },
-    { 
-      field: "category", 
-      headerName: "Categoría", 
-      width: 120,
-      minWidth: 100,
-      flex: 0.6,
-      headerAlign: 'center',
-      align: 'center',
-      renderCell: (params) => {
-        const isActive = params.row.status === 0;
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            fontSize: '0.875rem',
-            opacity: isActive ? 1 : 0.5
-          }}>
-            {/* 👇 NUEVO: Usar SearchHighlighter */}
-            <SearchHighlighter 
-              text={params.value} 
-              searchTerm={searchTerm}
-            />
-          </Box>
-        );
-      }
-    },
-    { 
-      field: "type", 
-      headerName: "Marca", 
-      width: 120,
-      minWidth: 100,
-      flex: 0.6,
-      headerAlign: 'center',
-      align: 'center',
-      renderCell: (params) => {
-        const isActive = params.row.status === 0;
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            fontSize: '0.875rem',
-            opacity: isActive ? 1 : 0.5
-          }}>
-            {/* 👇 NUEVO: Usar SearchHighlighter */}
-            <SearchHighlighter 
-              text={params.value} 
-              searchTerm={searchTerm}
-            />
-          </Box>
-        );
-      }
-    },
-    { 
-      field: "provider", 
-      headerName: "Proveedor", 
-      width: 150,
-      minWidth: 120,
-      flex: 0.8,
-      renderCell: (params) => {
-        const isActive = params.row.status === 0;
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            height: '100%',
-            fontSize: '0.875rem',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            opacity: isActive ? 1 : 0.5
-          }}>
-            {/* 👇 NUEVO: Usar SearchHighlighter */}
-            <SearchHighlighter 
-              text={params.value} 
-              searchTerm={searchTerm}
-            />
-          </Box>
-        );
-      }
-    },
-    { 
-      field: "stock", 
-      headerName: "Stock", 
-      type: "number", 
-      width: 90,
-      minWidth: 80,
-      flex: 0.4,
-      headerAlign: 'center',
-      align: 'center',
-      renderCell: (params) => {
-        const stockValue = params.value || 0;
-        const minStock = params.row?.min_stock || 0;
-        const isActive = params.row.status === 0;
-        const { color, backgroundColor } = getStockStyle(stockValue, minStock);
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            width: '100%',
-            opacity: isActive ? 1 : 0.5
-          }}>
-            <Box sx={{ 
-              color: color, 
-              fontWeight: 'bold',
-              backgroundColor: backgroundColor,
-              padding: '4px 8px',
-              borderRadius: '4px',
-              textAlign: 'center',
-              minWidth: '40px'
-            }}>
-              {stockValue}
-            </Box>
-          </Box>
-        );
-      }
-    },
-    { 
-      field: "price", 
-      headerName: "Precio", 
-      type: "number", 
-      width: 110,
-      minWidth: 100,
-      flex: 0.5,
-      headerAlign: 'center',
-      align: 'right',
-      renderCell: (params) => {
-        const price = params.value || 0;
-        const isActive = params.row.status === 0;
-        const safeColors = colors || {};
-        const priceColor = safeColors.greenAccent?.[400] || '#4caf50';
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            height: '100%',
-            fontWeight: 'bold', 
-            color: priceColor,
-            fontSize: '0.875rem',
-            opacity: isActive ? 1 : 0.5
-          }}>
-            ${price.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-          </Box>
-        );
-      }
-    },
-    { 
-      field: "location", 
-      headerName: "Ubicación", 
-      width: 150,
-      minWidth: 120,
-      flex: 0.8,
-      renderCell: (params) => {
-        const isActive = params.row.status === 0;
-        
-        return (
-          <Box sx={{ 
-            display: 'flex',
-            alignItems: 'center',
-            height: '100%',
-            fontSize: '0.875rem',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            opacity: isActive ? 1 : 0.5
-          }}>
-            {/* 👇 NUEVO: Usar SearchHighlighter */}
-            <SearchHighlighter 
-              text={params.value} 
-              searchTerm={searchTerm}
-            />
-          </Box>
-        );
-      }
-    },
-    {
-      field: "actions",
-      headerName: "Acciones",
-      width: 350,
-      minWidth: 300,
-      sortable: false,
-      renderCell: (params) => {
-        const { row } = params;
-        const isActive = row.status === 0;
-        
-        return (
-          <Box display="flex" alignItems="center" gap={0.5} height="100%" flexWrap="wrap">
-            <Tooltip title={isActive ? "Editar producto" : "No se puede editar un producto inactivo"}>
-              <span>
-                <IconButton
-                  size="small"
-                  color="warning"
-                  onClick={() => handleEdit(row.id)}
-                  disabled={!isAdmin || !isActive}
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            <Tooltip title={isActive ? "Agregar stock" : "No se puede modificar stock de producto inactivo"}>
-              <span>
-                <IconButton
-                  size="small"
-                  color="success"
-                  onClick={() => handleStockChange(row.id, row.name, row.stock, 'add')}
-                  disabled={!isActive}
-                >
-                  <AddCircleIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            <Tooltip title={isActive ? "Restar stock" : "No se puede modificar stock de producto inactivo"}>
-              <span>
-                <IconButton
-                  size="small"
-                  color="info"
-                  onClick={() => handleStockChange(row.id, row.name, row.stock, 'remove')}
-                  disabled={!isActive}
-                >
-                  <RemoveCircleIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            <Tooltip title={isActive ? "Deshabilitar producto" : "Rehabilitar producto"}>
-              <span>
-                <IconButton
-                  size="small"
-                  color={isActive ? "error" : "success"}
-                  onClick={() => handleToggleStatus(row.id, row.status)}
-                  disabled={!isAdmin}
-                >
-                  {isActive ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            {isAdmin && isActive && (
-              <Tooltip title="Eliminar producto">
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => setDeleteDialog({ 
-                    open: true, 
-                    productId: row.id, 
-                    productName: row.name 
-                  })}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Box>
-        );
-      }
-    }
-  ], [colors, isAdmin, searchTerm]); // 👈 AGREGAR searchTerm
-
-  if (loading) {
+  if (loading && !products.length) {
     return (
       <Box m="20px" display="flex" justifyContent="center" alignItems="center" height="50vh">
         <CircularProgress size={60} />
@@ -674,11 +322,8 @@ const handleDeleteConfirm = async () => {
 
   return (
     <Box m="20px">
-      <Header
-        title="Inventario de Productos"
-        subtitle={`${products.length} productos en almacén`}
-      />
-      
+      <Header title="Inventario de Productos" subtitle={`${products.length} productos en almacén`} />
+
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Box display="flex" alignItems="center" gap={2}>
           <Button
@@ -690,169 +335,345 @@ const handleDeleteConfirm = async () => {
             {showInactive ? "Ocultar Inactivos" : "Mostrar Inactivos"}
           </Button>
           <Typography variant="body2" color="text.secondary">
-            {showInactive 
-              ? `${products.length} productos (${products.filter(p => p.status === 0).length} activos, ${products.filter(p => p.status === 1).length} inactivos)`
+            {showInactive
+              ? `${products.length} productos (${products.filter(p => p.status === 0).length} activos)`
               : `${filteredProducts.length} productos activos`
             }
           </Typography>
         </Box>
-        
+
         {isAdmin && (
           <Button
             variant="contained"
             color="secondary"
             startIcon={<AddIcon />}
-            onClick={() => navigate("/createProduct")}
+            onClick={() => handleOpenDialog()}
             sx={{ px: 3, py: 1.5, fontWeight: 'bold' }}
           >
             Crear Producto
           </Button>
         )}
       </Box>
-      
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
 
-      <Box
-        m="40px 0 0 0"
-        height={{ xs: "70vh", sm: "75vh", md: "80vh" }}
-        width="100%"
-        sx={{
-          "& .MuiDataGrid-root": {
-            border: "none",
-          },
-          "& .MuiDataGrid-cell": {
-            borderBottom: "none",
-            display: 'flex',
-            alignItems: 'center',
-            padding: '8px',
-          },
-          "& .name-column--cell": {
-            color: safeColors.greenAccent?.[300] || '#4caf50',
-            fontWeight: 'bold'
-          },
-          "& .MuiDataGrid-columnHeaders": {
-            backgroundColor: safeColors.blueAccent?.[700] || '#1976d2',
-            borderBottom: "none",
-            fontSize: '0.95rem',
-            fontWeight: 'bold'
-          },
-          "& .MuiDataGrid-virtualScroller": {
-            backgroundColor: safeColors.primary?.[400] || '#f5f5f5',
-          },
-          "& .MuiDataGrid-footerContainer": {
-            borderTop: "none",
-            backgroundColor: safeColors.blueAccent?.[700] || '#1976d2',
-          },
-          "& .MuiCheckbox-root": {
-            color: `${safeColors.greenAccent?.[200] || '#4caf50'} !important`,
-          },
-          "& .MuiDataGrid-toolbarContainer .MuiButton-text": {
-            color: `${safeColors.grey?.[100] || '#ffffff'} !important`,
-          },
-      "& .MuiDataGrid-row": {
-        minHeight: '60px !important',
-        "&:hover": {
-         backgroundColor: theme.palette.mode === 'dark' 
-          ? 'rgba(255, 255, 255, 0.08) !important'  // Hover claro para modo oscuro
-          : 'rgba(0, 0, 0, 0.04) !important',       // Hover oscuro para modo claro
-        },
-      },
-        }}
-      >
-        <DataGrid
-          rows={filteredProducts}
-          columns={columns}
-          slots={{ toolbar: GridToolbar }}
-          loading={loading}
-          rowHeight={60}
-          initialState={{
-            pagination: {
-              paginationModel: { pageSize: 25 }
-            }
-          }}
-          pageSizeOptions={[10, 25, 50, 100]}
-          disableRowSelectionOnClick
-          hideFooterSelectedRowCount
-        />
-      </Box>
+      <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
+        <Table>
+          <TableHead sx={{ backgroundColor: colors.blueAccent[700] }}>
+            <TableRow>
+              <TableCell><Typography fontWeight="bold">Código / Nombre</Typography></TableCell>
+              <TableCell><Typography fontWeight="bold">Descripción</Typography></TableCell>
+              <TableCell><Typography fontWeight="bold">Categoría</Typography></TableCell>
+              <TableCell><Typography fontWeight="bold">Marca</Typography></TableCell>
+              <TableCell><Typography fontWeight="bold">Proveedor</Typography></TableCell>
+              <TableCell align="center"><Typography fontWeight="bold">Stock</Typography></TableCell>
+              <TableCell align="center"><Typography fontWeight="bold">Precio</Typography></TableCell>
+              <TableCell><Typography fontWeight="bold">Ubicación</Typography></TableCell>
+              <TableCell align="center"><Typography fontWeight="bold">Acciones</Typography></TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filteredProducts.map((row) => {
+              const isActive = row.status === 0;
+              return (
+                <TableRow key={row.id} hover>
+                  <TableCell>
+                    <SearchHighlighter text={row.name} searchTerm={searchTerm} />
+                  </TableCell>
+                  <TableCell>
+                    <SearchHighlighter text={row.description} searchTerm={searchTerm} />
+                  </TableCell>
+                  <TableCell>
+                    <SearchHighlighter text={row.category} searchTerm={searchTerm} />
+                  </TableCell>
+                  <TableCell>
+                    <SearchHighlighter text={row.type} searchTerm={searchTerm} />
+                  </TableCell>
+                  <TableCell>
+                    <SearchHighlighter text={row.provider} searchTerm={searchTerm} />
+                  </TableCell>
+                  <TableCell align="center">
+                    <span style={getStockStyle(row.stock, row.min_stock)}>{row.stock}</span>
+                  </TableCell>
+                  <TableCell align="center">
+                    <Typography color={colors.greenAccent[500]}>
+                      ${row.price}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <SearchHighlighter text={row.location} searchTerm={searchTerm} />
+                  </TableCell>
+                  <TableCell align="center">
+                    <Box display="flex" justifyContent="center" gap={1}>
+                      <Tooltip title="Editar">
+                        <span>
+                          <IconButton size="small" color="warning" onClick={() => handleOpenDialog(row.original)} disabled={!isAdmin || !isActive}>
+                            <EditIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Agregar Stock">
+                        <span>
+                          <IconButton size="small" color="success" onClick={() => handleStockChange(row.id, row.name, row.stock, 'add')} disabled={!isActive}>
+                            <AddCircleIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title="Restar Stock">
+                        <span>
+                          <IconButton size="small" color="info" onClick={() => handleStockChange(row.id, row.name, row.stock, 'remove')} disabled={!isActive}>
+                            <RemoveCircleIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip title={isActive ? "Deshabilitar" : "Habilitar"}>
+                        <span>
+                          <IconButton size="small" color={isActive ? "error" : "success"} onClick={() => handleToggleStatus(row.id, row.status)} disabled={!isAdmin}>
+                            {isActive ? <BlockIcon /> : <CheckCircleIcon />}
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      {isAdmin && isActive && (
+                        <Tooltip title="Eliminar">
+                          <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, productId: row.id, productName: row.name })}>
+                            <DeleteIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
-      <Dialog open={stockDialog.open} onClose={() => setStockDialog({ ...stockDialog, open: false })}>
-        <DialogTitle>
-          {stockDialog.operation === 'add' ? 'Agregar Stock' : 'Restar Stock'}
-        </DialogTitle>
+      {/* Modal de Creación/Edición */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+        <DialogTitle>{editingProduct ? "Editar Producto" : "Crear Nuevo Producto"}</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" sx={{ mb: 2 }}>
+          <Formik
+            initialValues={{
+              part_number: editingProduct?.part_number || "", // Fixed: use part_number
+              description: editingProduct?.description || "",
+              price: editingProduct?.price || 0,
+              quantity: editingProduct?.quantity || 0, // Fixed: use quantity and renamed
+              min_stock: editingProduct?.min_stock || 0,
+              max_stock: editingProduct?.max_stock || 0,
+              categoryId: editingProduct?.category_id || "", // Fixed: remove .original
+              brandId: editingProduct?.brand_id || "", // Fixed: remove .original
+              providerId: editingProduct?.provider_id || "", // Fixed: remove .original
+              locationId: editingProduct?.location_id || "", // Fixed: remove .original
+            }}
+            validationSchema={productSchema}
+            onSubmit={handleFormSubmit}
+          >
+            {({ values, errors, touched, handleBlur, handleChange, handleSubmit }) => (
+              <form onSubmit={handleSubmit} id="product-form">
+                <Box display="grid" gap="30px" gridTemplateColumns="repeat(4, minmax(0, 1fr))" sx={{ "& > div": { gridColumn: "span 4" } }}>
+                  <TextField
+                    fullWidth
+                    variant="filled"
+                    type="text"
+                    label="Número de Parte / Código"
+                    onBlur={handleBlur}
+                    onChange={handleChange}
+                    value={values.part_number}
+                    name="part_number"
+                    error={!!touched.part_number && !!errors.part_number}
+                    helperText={touched.part_number && errors.part_number}
+                    sx={{ gridColumn: "span 2" }}
+                  />
+                  <TextField
+                    fullWidth
+                    variant="filled"
+                    type="text"
+                    label="Descripción"
+                    onBlur={handleBlur}
+                    onChange={handleChange}
+                    value={values.description}
+                    name="description"
+                    error={!!touched.description && !!errors.description}
+                    helperText={touched.description && errors.description}
+                    sx={{ gridColumn: "span 2" }}
+                  />
+                  <TextField
+                    fullWidth
+                    variant="filled"
+                    type="number"
+                    label="Precio"
+                    onBlur={handleBlur}
+                    onChange={handleChange}
+                    value={values.price}
+                    name="price"
+                    error={!!touched.price && !!errors.price}
+                    helperText={touched.price && errors.price}
+                    sx={{ gridColumn: "span 2" }}
+                  />
+                  <TextField
+                    fullWidth
+                    variant="filled"
+                    type="number"
+                    label="Stock Inicial"
+                    onBlur={handleBlur}
+                    onChange={handleChange}
+                    value={values.quantity} // Renamed from stock
+                    name="quantity" // Renamed from stock
+                    error={!!touched.quantity && !!errors.quantity} // Renamed from stock
+                    helperText={touched.quantity && errors.quantity} // Renamed from stock
+                    sx={{ gridColumn: "span 2" }}
+                  />
+                  <TextField
+                    fullWidth
+                    variant="filled"
+                    type="number"
+                    label="Stock Mínimo"
+                    onBlur={handleBlur}
+                    onChange={handleChange}
+                    value={values.min_stock}
+                    name="min_stock"
+                    error={!!touched.min_stock && !!errors.min_stock}
+                    helperText={touched.min_stock && errors.min_stock}
+                    sx={{ gridColumn: "span 2" }}
+                  />
+                  <TextField
+                    fullWidth
+                    variant="filled"
+                    type="number"
+                    label="Stock Máximo"
+                    onBlur={handleBlur}
+                    onChange={handleChange}
+                    value={values.max_stock}
+                    name="max_stock"
+                    error={!!touched.max_stock && !!errors.max_stock}
+                    helperText={touched.max_stock && errors.max_stock}
+                    sx={{ gridColumn: "span 2" }}
+                  />
+
+                  <FormControl fullWidth variant="filled" sx={{ gridColumn: "span 2" }}>
+                    <InputLabel>Categoría</InputLabel>
+                    <Select
+                      value={values.categoryId}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      name="categoryId"
+                      error={!!touched.categoryId && !!errors.categoryId}
+                    >
+                      {categories.map((cat) => (
+                        <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth variant="filled" sx={{ gridColumn: "span 2" }}>
+                    <InputLabel>Marca</InputLabel>
+                    <Select
+                      value={values.brandId}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      name="brandId"
+                      error={!!touched.brandId && !!errors.brandId}
+                    >
+                      {brands.map((brand) => (
+                        <MenuItem key={brand.id} value={brand.id}>{brand.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth variant="filled" sx={{ gridColumn: "span 2" }}>
+                    <InputLabel>Proveedor</InputLabel>
+                    <Select
+                      value={values.providerId}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      name="providerId"
+                      error={!!touched.providerId && !!errors.providerId}
+                    >
+                      {providers.map((prov) => (
+                        <MenuItem key={prov.id} value={prov.id}>{prov.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl fullWidth variant="filled" sx={{ gridColumn: "span 2" }}>
+                    <InputLabel>Ubicación</InputLabel>
+                    <Select
+                      value={values.locationId}
+                      onChange={handleChange}
+                      onBlur={handleBlur}
+                      name="locationId"
+                      error={!!touched.locationId && !!errors.locationId}
+                    >
+                      {locations.map((loc) => (
+                        <MenuItem key={loc.id} value={loc.id}>{loc.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+              </form>
+            )}
+          </Formik>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog} color="inherit">Cancelar</Button>
+          <Button type="submit" form="product-form" color="secondary" variant="contained">
+            {editingProduct ? "Guardar Cambios" : "Crear Producto"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal de Stock */}
+      <Dialog open={stockDialog.open} onClose={() => setStockDialog(prev => ({ ...prev, open: false }))}>
+        <DialogTitle>{stockDialog.operation === 'add' ? 'Agregar Stock' : 'Restar Stock'}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" gutterBottom>
             Producto: <strong>{stockDialog.productName}</strong>
           </Typography>
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Stock actual: <strong>{stockDialog.currentStock}</strong>
+          <Typography variant="body2" gutterBottom>
+            Stock Actual: {stockDialog.currentStock}
           </Typography>
           <TextField
             autoFocus
             margin="dense"
-            label={`Cantidad a ${stockDialog.operation === 'add' ? 'agregar' : 'restar'}`}
+            label="Cantidad"
             type="number"
             fullWidth
             variant="outlined"
             value={stockDialog.amount}
-            onChange={(e) => setStockDialog({ ...stockDialog, amount: Math.max(1, parseInt(e.target.value) || 1) })}
+            onChange={(e) => setStockDialog(prev => ({ ...prev, amount: Number(e.target.value) }))}
             inputProps={{ min: 1 }}
           />
-          <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
-            Nuevo stock: <strong>
-              {stockDialog.operation === 'add' 
-                ? stockDialog.currentStock + parseInt(stockDialog.amount)
-                : Math.max(0, stockDialog.currentStock - parseInt(stockDialog.amount))
-              }
-            </strong>
-          </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setStockDialog({ ...stockDialog, open: false })}>
-            Cancelar
-          </Button>
-          <Button onClick={handleStockConfirm} variant="contained">
+          <Button onClick={() => setStockDialog(prev => ({ ...prev, open: false }))}>Cancelar</Button>
+          <Button onClick={handleStockConfirm} color="primary" variant="contained">
             Confirmar
           </Button>
         </DialogActions>
-      </Dialog>      {/* Dialog de confirmación de eliminación */}
-      <Dialog
-        open={deleteDialog.open}
-        onClose={() => setDeleteDialog({ ...deleteDialog, open: false })}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          Confirmar Eliminación
-        </DialogTitle>
+      </Dialog>
+
+      {/* Modal de Confirmación de Eliminación */}
+      <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, productId: null, productName: '' })}>
+        <DialogTitle>Confirmar Eliminación</DialogTitle>
         <DialogContent>
           <Typography>
-            ¿Estás seguro de que deseas eliminar el producto "{deleteDialog.productName}"?
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+            ¿Estás seguro de que deseas eliminar el producto <strong>{deleteDialog.productName}</strong>?
             Esta acción no se puede deshacer.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialog({ ...deleteDialog, open: false })} color="inherit">
-            Cancelar
-          </Button>
-          <Button 
-            onClick={handleDeleteConfirm} 
-            variant="contained" 
-            color="error"
-            autoFocus
-          >
+          <Button onClick={() => setDeleteDialog({ open: false, productId: null, productName: '' })}>Cancelar</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">
             Eliminar
           </Button>
         </DialogActions>
       </Dialog>
+
+      <AppSnackbar
+        open={snackbar.open}
+        message={snackbar.message}
+        severity={snackbar.severity}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+      />
     </Box>
   );
-};
-
-export default Products;
+}

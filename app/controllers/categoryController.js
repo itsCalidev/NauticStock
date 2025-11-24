@@ -1,26 +1,23 @@
 const Controller = require('./Controller');
 const Category = require('../models/category');
 const History = require('../models/history');
+const Validator = require('../classes/Validator');
 
 class CategoryController extends Controller {
   constructor() {
     super();
     this.categoryModel = new Category();
     this.historyModel = new History();
-  }  // Obtener todas las categorías activas
+  }
+
+  // Obtener todas las categorías activas
   async getCategories(req, res) {
     try {
-      console.log('🔍 CategoryController.getCategories llamado');
-      console.log('🔍 Usuario autenticado:', req.user?.id);
-      
       const categories = await this.categoryModel.getActiveCategories();
-      console.log('✅ Categorías obtenidas:', categories.length, 'registros');
-      console.log('✅ Primera categoría:', categories[0]);
-      
-      res.json(categories);
+      return this.sendResponse(res, 200, categories);
     } catch (error) {
-      console.error('❌ Error obteniendo categorías:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      console.error('Error obteniendo categorías:', error);
+      return this.sendInternalError(res, 'Error al obtener categorías');
     }
   }
 
@@ -29,24 +26,26 @@ class CategoryController extends Controller {
     try {
       const { name, description } = req.body;
 
-      // Validaciones
-      if (!name || name.trim() === '') {
-        return res.status(400).json({ error: 'El nombre de la categoría es requerido' });
+      const error = Validator.validate(req.body, {
+        name: { required: true }
+      });
+
+      if (error) {
+        return this.sendResponse(res, 400, null, error);
       }
 
-      // Verificar si ya existe
       const existingCategory = await this.categoryModel.getCategoryByName(name.trim());
       if (existingCategory) {
-        return res.status(409).json({ error: 'Ya existe una categoría con este nombre' });
+        return this.sendResponse(res, 409, null, 'Ya existe una categoría con este nombre');
       }
 
-      // Crear categoría
       const categoryData = {
         name: name.trim(),
         description: description?.trim() || null
       };
 
-      const result = await this.categoryModel.createCategory(categoryData);      // Registrar en historial
+      const result = await this.categoryModel.createCategory(categoryData);
+
       await this.historyModel.registerLog({
         action_type: 'Categoría Creada',
         performed_by: req.user.id,
@@ -54,14 +53,11 @@ class CategoryController extends Controller {
         description: `Creó categoría ${categoryData.name}`
       });
 
-      res.status(201).json({ 
-        message: 'Categoría creada exitosamente',
-        categoryId: result.insertId 
-      });
+      return this.sendResponse(res, 201, { id: result.insertId }, 'Categoría creada exitosamente');
 
     } catch (error) {
       console.error('Error creando categoría:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al crear categoría');
     }
   }
 
@@ -71,21 +67,22 @@ class CategoryController extends Controller {
       const { id } = req.params;
       const { name, description } = req.body;
 
-      // Validaciones
-      if (!name || name.trim() === '') {
-        return res.status(400).json({ error: 'El nombre de la categoría es requerido' });
+      const error = Validator.validate(req.body, {
+        name: { required: true }
+      });
+
+      if (error) {
+        return this.sendResponse(res, 400, null, error);
       }
 
-      // Verificar si existe
       const existingCategory = await this.categoryModel.getCategoryById(id);
       if (!existingCategory) {
-        return res.status(404).json({ error: 'Categoría no encontrada' });
+        return this.sendNotFound(res, 'Categoría no encontrada');
       }
 
-      // Verificar si el nuevo nombre ya existe (excepto la categoría actual)
       const duplicateCategory = await this.categoryModel.getCategoryByName(name.trim());
       if (duplicateCategory && duplicateCategory.id != id) {
-        return res.status(409).json({ error: 'Ya existe una categoría con este nombre' });
+        return this.sendResponse(res, 409, null, 'Ya existe una categoría con este nombre');
       }
 
       const categoryData = {
@@ -93,7 +90,8 @@ class CategoryController extends Controller {
         description: description?.trim() || null
       };
 
-      await this.categoryModel.updateCategory(id, categoryData);      // Registrar en historial
+      await this.categoryModel.updateCategory(id, categoryData);
+
       await this.historyModel.registerLog({
         action_type: 'Categoría Actualizada',
         performed_by: req.user.id,
@@ -102,11 +100,11 @@ class CategoryController extends Controller {
         description: `Actualizó categoría ${categoryData.name}`
       });
 
-      res.json({ message: 'Categoría actualizada exitosamente' });
+      return this.sendResponse(res, 200, null, 'Categoría actualizada exitosamente');
 
     } catch (error) {
       console.error('Error actualizando categoría:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al actualizar categoría');
     }
   }
 
@@ -115,13 +113,13 @@ class CategoryController extends Controller {
     try {
       const { id } = req.params;
 
-      // Verificar si existe
       const existingCategory = await this.categoryModel.getCategoryById(id);
       if (!existingCategory) {
-        return res.status(404).json({ error: 'Categoría no encontrada' });
+        return this.sendNotFound(res, 'Categoría no encontrada');
       }
 
-      await this.categoryModel.deleteCategory(id);      // Registrar en historial
+      await this.categoryModel.deleteCategory(id);
+
       await this.historyModel.registerLog({
         action_type: 'Categoría Eliminada',
         performed_by: req.user.id,
@@ -129,11 +127,11 @@ class CategoryController extends Controller {
         description: `Eliminó categoría ${existingCategory.name}`
       });
 
-      res.json({ message: 'Categoría eliminada exitosamente' });
+      return this.sendResponse(res, 200, null, 'Categoría eliminada exitosamente');
 
     } catch (error) {
       console.error('Error eliminando categoría:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al eliminar categoría');
     }
   }
 
@@ -144,29 +142,24 @@ class CategoryController extends Controller {
       const category = await this.categoryModel.getCategoryById(id);
 
       if (!category) {
-        return res.status(404).json({ error: 'Categoría no encontrada' });
+        return this.sendNotFound(res, 'Categoría no encontrada');
       }
 
-      res.json(category);
+      return this.sendResponse(res, 200, category);
     } catch (error) {
       console.error('Error obteniendo categoría:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al obtener categoría');
     }
   }
 
-  // Obtener todas las categorías (incluyendo deshabilitadas) - solo para admin
+  // Obtener todas las categorías (incluyendo deshabilitadas)
   async getAllCategories(req, res) {
     try {
-      console.log('🔍 CategoryController.getAllCategories llamado');
-      console.log('🔍 Usuario autenticado:', req.user?.id);
-      
       const categories = await this.categoryModel.getAllCategories();
-      console.log('✅ Todas las categorías obtenidas:', categories.length, 'registros');
-      
-      res.json(categories);
+      return this.sendResponse(res, 200, categories);
     } catch (error) {
-      console.error('❌ Error obteniendo todas las categorías:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      console.error('Error obteniendo todas las categorías:', error);
+      return this.sendInternalError(res, 'Error al obtener todas las categorías');
     }
   }
 
@@ -175,20 +168,17 @@ class CategoryController extends Controller {
     try {
       const { id } = req.params;
 
-      // Verificar si existe (incluyendo deshabilitadas)
       const existingCategory = await this.categoryModel.getCategoryByIdAll(id);
       if (!existingCategory) {
-        return res.status(404).json({ error: 'Categoría no encontrada' });
+        return this.sendNotFound(res, 'Categoría no encontrada');
       }
 
-      // Verificar si ya está habilitada
       if (existingCategory.status === 0) {
-        return res.status(400).json({ error: 'La categoría ya está habilitada' });
+        return this.sendResponse(res, 400, null, 'La categoría ya está habilitada');
       }
 
       await this.categoryModel.enableCategory(id);
 
-      // Registrar en historial
       await this.historyModel.registerLog({
         action_type: 'Categoría Rehabilitada',
         performed_by: req.user.id,
@@ -197,11 +187,11 @@ class CategoryController extends Controller {
         description: `Rehabilitó categoría ${existingCategory.name}`
       });
 
-      res.json({ message: 'Categoría rehabilitada exitosamente' });
+      return this.sendResponse(res, 200, null, 'Categoría rehabilitada exitosamente');
 
     } catch (error) {
       console.error('Error rehabilitando categoría:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al rehabilitar categoría');
     }
   }
 }

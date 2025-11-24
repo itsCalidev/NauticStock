@@ -1,26 +1,23 @@
 const Controller = require('./Controller');
 const Location = require('../models/location');
 const History = require('../models/history');
+const Validator = require('../classes/Validator');
 
 class LocationController extends Controller {
   constructor() {
     super();
     this.locationModel = new Location();
     this.historyModel = new History();
-  }  // Obtener todas las ubicaciones activas
+  }
+
+  // Obtener todas las ubicaciones activas
   async getLocations(req, res) {
     try {
-      console.log('🔍 LocationController.getLocations llamado');
-      console.log('🔍 Usuario autenticado:', req.user?.id);
-      
       const locations = await this.locationModel.getActiveLocations();
-      console.log('✅ Ubicaciones obtenidas:', locations.length, 'registros');
-      console.log('✅ Primera ubicación:', locations[0]);
-      
-      res.json(locations);
+      return this.sendResponse(res, 200, locations);
     } catch (error) {
-      console.error('❌ Error obteniendo ubicaciones:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      console.error('Error obteniendo ubicaciones:', error);
+      return this.sendInternalError(res, 'Error al obtener ubicaciones');
     }
   }
 
@@ -29,24 +26,26 @@ class LocationController extends Controller {
     try {
       const { name, description } = req.body;
 
-      // Validaciones
-      if (!name || name.trim() === '') {
-        return res.status(400).json({ error: 'El nombre de la ubicación es requerido' });
+      const error = Validator.validate(req.body, {
+        name: { required: true }
+      });
+
+      if (error) {
+        return this.sendResponse(res, 400, null, error);
       }
 
-      // Verificar si ya existe
       const existingLocation = await this.locationModel.getLocationByName(name.trim());
       if (existingLocation) {
-        return res.status(409).json({ error: 'Ya existe una ubicación con este nombre' });
+        return this.sendResponse(res, 409, null, 'Ya existe una ubicación con este nombre');
       }
 
-      // Crear ubicación
       const locationData = {
         name: name.trim(),
         description: description?.trim() || null
       };
 
-      const result = await this.locationModel.createLocation(locationData);      // Registrar en historial
+      const result = await this.locationModel.createLocation(locationData);
+
       await this.historyModel.registerLog({
         action_type: 'Ubicación Creada',
         performed_by: req.user.id,
@@ -54,14 +53,11 @@ class LocationController extends Controller {
         description: `Creó ubicación ${locationData.name}`
       });
 
-      res.status(201).json({ 
-        message: 'Ubicación creada exitosamente',
-        locationId: result.insertId 
-      });
+      return this.sendResponse(res, 201, { id: result.insertId }, 'Ubicación creada exitosamente');
 
     } catch (error) {
       console.error('Error creando ubicación:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al crear ubicación');
     }
   }
 
@@ -71,21 +67,22 @@ class LocationController extends Controller {
       const { id } = req.params;
       const { name, description } = req.body;
 
-      // Validaciones
-      if (!name || name.trim() === '') {
-        return res.status(400).json({ error: 'El nombre de la ubicación es requerido' });
+      const error = Validator.validate(req.body, {
+        name: { required: true }
+      });
+
+      if (error) {
+        return this.sendResponse(res, 400, null, error);
       }
 
-      // Verificar si existe
       const existingLocation = await this.locationModel.getLocationById(id);
       if (!existingLocation) {
-        return res.status(404).json({ error: 'Ubicación no encontrada' });
+        return this.sendNotFound(res, 'Ubicación no encontrada');
       }
 
-      // Verificar si el nuevo nombre ya existe (excepto la ubicación actual)
       const duplicateLocation = await this.locationModel.getLocationByName(name.trim());
       if (duplicateLocation && duplicateLocation.id != id) {
-        return res.status(409).json({ error: 'Ya existe una ubicación con este nombre' });
+        return this.sendResponse(res, 409, null, 'Ya existe una ubicación con este nombre');
       }
 
       const locationData = {
@@ -93,7 +90,8 @@ class LocationController extends Controller {
         description: description?.trim() || null
       };
 
-      await this.locationModel.updateLocation(id, locationData);      // Registrar en historial
+      await this.locationModel.updateLocation(id, locationData);
+
       await this.historyModel.registerLog({
         action_type: 'Ubicación Actualizada',
         performed_by: req.user.id,
@@ -102,11 +100,11 @@ class LocationController extends Controller {
         description: `Actualizó ubicación ${locationData.name}`
       });
 
-      res.json({ message: 'Ubicación actualizada exitosamente' });
+      return this.sendResponse(res, 200, null, 'Ubicación actualizada exitosamente');
 
     } catch (error) {
       console.error('Error actualizando ubicación:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al actualizar ubicación');
     }
   }
 
@@ -115,13 +113,13 @@ class LocationController extends Controller {
     try {
       const { id } = req.params;
 
-      // Verificar si existe
       const existingLocation = await this.locationModel.getLocationById(id);
       if (!existingLocation) {
-        return res.status(404).json({ error: 'Ubicación no encontrada' });
+        return this.sendNotFound(res, 'Ubicación no encontrada');
       }
 
-      await this.locationModel.deleteLocation(id);      // Registrar en historial
+      await this.locationModel.deleteLocation(id);
+
       await this.historyModel.registerLog({
         action_type: 'Ubicación Eliminada',
         performed_by: req.user.id,
@@ -129,11 +127,11 @@ class LocationController extends Controller {
         description: `Eliminó ubicación ${existingLocation.name}`
       });
 
-      res.json({ message: 'Ubicación eliminada exitosamente' });
+      return this.sendResponse(res, 200, null, 'Ubicación eliminada exitosamente');
 
     } catch (error) {
       console.error('Error eliminando ubicación:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al eliminar ubicación');
     }
   }
 
@@ -144,29 +142,24 @@ class LocationController extends Controller {
       const location = await this.locationModel.getLocationById(id);
 
       if (!location) {
-        return res.status(404).json({ error: 'Ubicación no encontrada' });
+        return this.sendNotFound(res, 'Ubicación no encontrada');
       }
 
-      res.json(location);
+      return this.sendResponse(res, 200, location);
     } catch (error) {
       console.error('Error obteniendo ubicación:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al obtener ubicación');
     }
   }
 
-  // Obtener todas las ubicaciones (incluyendo deshabilitadas) - solo para admin
+  // Obtener todas las ubicaciones (incluyendo deshabilitadas)
   async getAllLocations(req, res) {
     try {
-      console.log('🔍 LocationController.getAllLocations llamado');
-      console.log('🔍 Usuario autenticado:', req.user?.id);
-      
       const locations = await this.locationModel.getAllLocations();
-      console.log('✅ Todas las ubicaciones obtenidas:', locations.length, 'registros');
-      
-      res.json(locations);
+      return this.sendResponse(res, 200, locations);
     } catch (error) {
-      console.error('❌ Error obteniendo todas las ubicaciones:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      console.error('Error obteniendo todas las ubicaciones:', error);
+      return this.sendInternalError(res, 'Error al obtener todas las ubicaciones');
     }
   }
 
@@ -175,20 +168,17 @@ class LocationController extends Controller {
     try {
       const { id } = req.params;
 
-      // Verificar si existe (incluyendo deshabilitadas)
       const existingLocation = await this.locationModel.getLocationByIdAll(id);
       if (!existingLocation) {
-        return res.status(404).json({ error: 'Ubicación no encontrada' });
+        return this.sendNotFound(res, 'Ubicación no encontrada');
       }
 
-      // Verificar si ya está habilitada
       if (existingLocation.status === 0) {
-        return res.status(400).json({ error: 'La ubicación ya está habilitada' });
+        return this.sendResponse(res, 400, null, 'La ubicación ya está habilitada');
       }
 
       await this.locationModel.enableLocation(id);
 
-      // Registrar en historial
       await this.historyModel.registerLog({
         action_type: 'Ubicación Rehabilitada',
         performed_by: req.user.id,
@@ -197,11 +187,11 @@ class LocationController extends Controller {
         description: `Rehabilitó ubicación ${existingLocation.name}`
       });
 
-      res.json({ message: 'Ubicación rehabilitada exitosamente' });
+      return this.sendResponse(res, 200, null, 'Ubicación rehabilitada exitosamente');
 
     } catch (error) {
       console.error('Error rehabilitando ubicación:', error);
-      res.status(500).json({ error: 'Error interno del servidor' });
+      return this.sendInternalError(res, 'Error al rehabilitar ubicación');
     }
   }
 }
