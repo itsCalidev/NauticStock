@@ -15,17 +15,20 @@ api.interceptors.response.use(
   resp => resp,
   err => {
     const status = err.response?.status;
-    if (status === 401 || status === 403) {
-      // mostramos el mensaje y luego limpiamos
-      // const msg = err.response.data?.error || "No autorizado";
-      // opcional: podrías setear un snackbar global aquí
+
+    // Solo cerrar sesión si es 401 (Token inválido/expirado)
+    if (status === 401) {
       setTimeout(() => {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         delete api.defaults.headers.common.Authorization;
-        // Emitir evento personalizado en lugar de recargar
         window.dispatchEvent(new Event("auth:session-expired"));
       }, 2000);
+    }
+
+    // 403 Forbidden se manejará en los componentes (redirección o alerta)
+    if (status === 403) {
+      console.warn('⛔ Acceso denegado (403). El usuario mantiene su sesión.');
     }
     return Promise.reject(err);
   }

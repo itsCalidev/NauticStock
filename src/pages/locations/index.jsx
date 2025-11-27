@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Button,
@@ -34,6 +35,9 @@ import AppSnackbar from "../../components/AppSnackbar";
 import SearchHighlighter from "../../components/SearchHighlighter";
 import { useSearch } from "../../contexts/SearchContext";
 import api from "../../api/axiosClient";
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { flexibleMatch } from "../../utils/searchUtils";
 
 export default function Locations() {
   const theme = useTheme();
@@ -50,6 +54,9 @@ export default function Locations() {
     severity: "success",
   });
 
+  const socket = useSocket();
+  const { can } = usePermission();
+
   // Estado para diálogo de eliminación
   const [deleteDialog, setDeleteDialog] = useState({
     open: false,
@@ -59,6 +66,13 @@ export default function Locations() {
 
   // Contexto de búsqueda
   const { searchTerm, isSearching } = useSearch();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!can('location_read')) {
+      navigate('/');
+    }
+  }, [can, navigate]);
 
   // Filtro de ubicaciones con búsqueda
   const filteredLocations = useMemo(() => {
@@ -69,11 +83,8 @@ export default function Locations() {
     }
 
     return locations.filter((location) => {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        location.name?.toLowerCase().includes(searchLower) ||
-        location.description?.toLowerCase().includes(searchLower)
-      );
+      const searchableText = `${location.name} ${location.description}`;
+      return flexibleMatch(searchableText, searchTerm);
     });
   }, [locations, isSearching, searchTerm]);
 
@@ -99,36 +110,31 @@ export default function Locations() {
     }
   }, [showDisabled]);
 
-  const POLL_INTERVAL = 5000;
-
   useEffect(() => {
     fetchLocations();
-    const intervalId = setInterval(() => fetchLocations({ silent: true }), POLL_INTERVAL);
-    return () => clearInterval(intervalId);
   }, [fetchLocations]);
 
-  // Escuchar eventos de otras ventanas/pestañas
+  // Escuchar eventos de Socket.io
   useEffect(() => {
-    const handleReload = () => fetchLocations({ silent: true });
+    if (!socket) return;
 
-    window.addEventListener("locationCreated", handleReload);
-    window.addEventListener("locationUpdated", handleReload);
-    window.addEventListener("locationDeleted", handleReload);
-    window.addEventListener("locationStatusChanged", handleReload);
-
-    const handleStorageChange = (e) => {
-      if (e.key === 'locationChanged') handleReload();
+    const handleLocationUpdate = (data) => {
+      console.log('🔔 Location update received:', data);
+      fetchLocations({ silent: true });
     };
-    window.addEventListener("storage", handleStorageChange);
+
+    socket.on('location_created', handleLocationUpdate);
+    socket.on('location_updated', handleLocationUpdate);
+    socket.on('location_deleted', handleLocationUpdate);
+    socket.on('location_status_changed', handleLocationUpdate);
 
     return () => {
-      window.removeEventListener("locationCreated", handleReload);
-      window.removeEventListener("locationUpdated", handleReload);
-      window.removeEventListener("locationDeleted", handleReload);
-      window.removeEventListener("locationStatusChanged", handleReload);
-      window.removeEventListener("storage", handleStorageChange);
+      socket.off('location_created', handleLocationUpdate);
+      socket.off('location_updated', handleLocationUpdate);
+      socket.off('location_deleted', handleLocationUpdate);
+      socket.off('location_status_changed', handleLocationUpdate);
     };
-  }, [fetchLocations]);
+  }, [socket, fetchLocations]);
 
   const handleOpen = (location = null) => {
     if (location) {
@@ -157,17 +163,13 @@ export default function Locations() {
       if (editingLocation) {
         await api.put(`/api/locations/${editingLocation.id}`, formData);
         showSnackbar("Ubicación actualizada exitosamente");
-        window.dispatchEvent(new Event("locationUpdated"));
-        localStorage.setItem('locationChanged', Date.now().toString());
       } else {
         await api.post("/api/locations", formData);
         showSnackbar("Ubicación creada exitosamente");
-        window.dispatchEvent(new Event("locationCreated"));
-        localStorage.setItem('locationChanged', Date.now().toString());
       }
 
       handleClose();
-      fetchLocations();
+      // fetchLocations(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al procesar la solicitud";
       showSnackbar(message, "error");
@@ -185,9 +187,7 @@ export default function Locations() {
     try {
       await api.delete(`/api/locations/${deleteDialog.locationId}`);
       showSnackbar("Ubicación eliminada exitosamente");
-      window.dispatchEvent(new Event("locationDeleted"));
-      localStorage.setItem('locationChanged', Date.now().toString());
-      fetchLocations();
+      // fetchLocations(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al eliminar la ubicación";
       showSnackbar(message, "error");
@@ -204,9 +204,7 @@ export default function Locations() {
     try {
       await api.put(`/api/locations/${id}/enable`);
       showSnackbar(`Ubicación "${name}" rehabilitada exitosamente`);
-      window.dispatchEvent(new Event("locationStatusChanged"));
-      localStorage.setItem('locationChanged', Date.now().toString());
-      fetchLocations();
+      // fetchLocations(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al rehabilitar la ubicación";
       showSnackbar(message, "error");
@@ -249,15 +247,17 @@ export default function Locations() {
           {showDisabled ? "Ocultar Deshabilitadas" : "Mostrar Deshabilitadas"}
         </Button>
 
-        <Button
-          variant="contained"
-          color="secondary"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpen()}
-          sx={{ px: 3, py: 1.5 }}
-        >
-          Nueva Ubicación
-        </Button>
+        {can('location_create') && (
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpen()}
+            sx={{ px: 3, py: 1.5 }}
+          >
+            Nueva Ubicación
+          </Button>
+        )}
       </Box>
 
       <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
@@ -363,30 +363,36 @@ export default function Locations() {
               <TableCell align="center">
                 {location.status === 0 ? (
                   <>
-                    <IconButton
-                      onClick={() => handleOpen(location)}
-                      color="warning"
-                      size="small"
-                      sx={{ mr: 1 }}
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      onClick={() => handleDelete(location.id, location.name)}
-                      color="error"
-                      size="small"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
+                    {can('location_update') && (
+                      <IconButton
+                        onClick={() => handleOpen(location)}
+                        color="warning"
+                        size="small"
+                        sx={{ mr: 1 }}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    )}
+                    {can('location_delete') && (
+                      <IconButton
+                        onClick={() => handleDelete(location.id, location.name)}
+                        color="error"
+                        size="small"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    )}
                   </>
                 ) : (
-                  <IconButton
-                    onClick={() => handleEnable(location.id, location.name)}
-                    color="success"
-                    size="small"
-                    title="Rehabilitar ubicación"
-                  >                      <RestoreIcon />
-                  </IconButton>
+                  can('location_update') && (
+                    <IconButton
+                      onClick={() => handleEnable(location.id, location.name)}
+                      color="success"
+                      size="small"
+                      title="Rehabilitar ubicación"
+                    >                      <RestoreIcon />
+                    </IconButton>
+                  )
                 )}
               </TableCell>
             </TableRow>

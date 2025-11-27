@@ -1,7 +1,8 @@
 const Controller = require('./Controller');
-const Rank = require('../models/Rank');
+const Rank = require('../models/rank');
 const History = require('../models/history');
-const Validator = require('../classes/Validator');
+const Validator = require('../classes/validator');
+const socketManager = require('../classes/socketManager');
 
 class RanksController extends Controller {
     constructor() {
@@ -45,10 +46,14 @@ class RanksController extends Controller {
 
             const insertId = await this.rankModel.createRank(rankData);
 
+            // Emit socket event
+            socketManager.emit('rank_created', { id: insertId, ...rankData });
+            socketManager.emit('history_updated', {});
+
             await this.historyModel.registerLog({
                 action_type: 'Rango Creado',
                 performed_by: req.user.id,
-                entity_type: 'ranks', // Assuming 'ranks' is not yet in entity_type enum/check but history table is flexible
+                entity_type: 'ranks',
                 entity_id: insertId,
                 new_value: rankData,
                 description: `Creó rango ${rankData.name}`
@@ -92,6 +97,10 @@ class RanksController extends Controller {
 
             await this.rankModel.updateRank(id, rankData);
 
+            // Emit socket event
+            socketManager.emit('rank_updated', { id, ...rankData });
+            socketManager.emit('history_updated', {});
+
             await this.historyModel.registerLog({
                 action_type: 'Rango Actualizado',
                 performed_by: req.user.id,
@@ -121,6 +130,10 @@ class RanksController extends Controller {
             }
 
             await this.rankModel.deleteRank(id);
+
+            // Emit socket event
+            socketManager.emit('rank_deleted', { id });
+            socketManager.emit('history_updated', {});
 
             await this.historyModel.registerLog({
                 action_type: 'Rango Eliminado',

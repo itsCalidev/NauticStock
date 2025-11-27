@@ -5,6 +5,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import "react-pro-sidebar/dist/css/styles.css";
 import { Token } from "../../theme";
+import usePermission from "../../hooks/usePermission";
+
+import defaultPic from "../../assets/default.png";
 
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import PeopleOutlinedIcon from "@mui/icons-material/PeopleOutlined";
@@ -12,10 +15,6 @@ import InventoryIcon from "@mui/icons-material/Inventory";
 import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import CalendarTodayOutlinedIcon from "@mui/icons-material/CalendarTodayOutlined";
 import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
-import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
-import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
-import TimelineOutlinedIcon from "@mui/icons-material/TimelineOutlined";
-import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import GradeIcon from "@mui/icons-material/Grade";
 import CategoryIcon from "@mui/icons-material/Category";
@@ -23,8 +22,8 @@ import PlaceIcon from "@mui/icons-material/Place";
 import SellIcon from "@mui/icons-material/Sell";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import SecurityIcon from "@mui/icons-material/Security";
-
-import defaultPic from "../../assets/default.png";
+import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 
 const Item = ({ title, to, icon }) => {
   const theme = useTheme();
@@ -60,6 +59,7 @@ export default function Sidebar() {
   const theme = useTheme();
   const colors = Token(theme.palette.mode);
   const [collapsed, setCollapsed] = useState(false);
+  const { can } = usePermission();
 
   const [user, setUser] = useState({
     name: "Usuario",
@@ -89,8 +89,6 @@ export default function Sidebar() {
       window.removeEventListener("userUpdated", loadUser);
     };
   }, []);
-
-  const isAdmin = user.roleId === 1;
 
   return (
     <Box
@@ -142,7 +140,69 @@ export default function Sidebar() {
 
           {/* Menu Sections */}
           <Box paddingLeft={collapsed ? undefined : "10%"}>
-            <Item title="Dashboard" to="/" icon={<HomeOutlinedIcon />} />
+            {/* Dashboard */}
+            {can('dashboard_view') && (
+              <Item title="Dashboard" to="/" icon={<HomeOutlinedIcon />} />
+            )}
+
+            <Typography
+              variant="h6"
+              color={colors.grey[300]}
+              sx={{ m: "15px 0 5px 20px" }}
+            >
+              Datos
+            </Typography>
+
+            {/* Team */}
+            {can('user_read') && (
+              <Item
+                title="Equipo"
+                to="/team"
+                icon={<PeopleOutlinedIcon />}
+              />
+            )}
+
+            {/* Products */}
+            {can('product_read') && (
+              <Item title="Productos" to="/products" icon={<InventoryIcon />} />
+            )}
+
+            {/* Providers */}
+            {can('provider_read') && (
+              <Item title="Proveedores" to="/providers" icon={<LocalShippingIcon />} />
+            )}
+
+            {/* Orders */}
+            {can('order_read') && (
+              <Item title="Ordenes" to="/orders" icon={<ReceiptLongOutlinedIcon />} />
+            )}
+
+            {/* Categories */}
+            {can('category_read') && (
+              <Item
+                title="Categorías"
+                to="/categories"
+                icon={<CategoryIcon />}
+              />
+            )}
+
+            {/* Brands */}
+            {can('brand_read') && (
+              <Item
+                title="Marcas"
+                to="/brands"
+                icon={<SellIcon />}
+              />
+            )}
+
+            {/* Locations */}
+            {can('location_read') && (
+              <Item
+                title="Ubicaciones"
+                to="/locations"
+                icon={<PlaceIcon />}
+              />
+            )}
 
             <Typography
               variant="h6"
@@ -151,73 +211,61 @@ export default function Sidebar() {
             >
               Administración
             </Typography>
-            {isAdmin && (
+
+            {/* Roles */}
+            {can('role_read') && (
               <Item
-                title="Equipo de Trabajo"
-                to="/team"
-                icon={<PeopleOutlinedIcon />}
+                title="Roles y Permisos"
+                to="/roles"
+                icon={<SecurityIcon />}
               />
             )}
-            <Item title="Productos" to="/products" icon={<InventoryIcon />} />
-            <Item title="Proveedores" to="/providers" icon={<LocalShippingIcon />} />
 
-            {isAdmin && (
-              <>
-                <Item
-                  title="Categorías"
-                  to="/categories"
-                  icon={<CategoryIcon />}
-                />
-                <Item
-                  title="Marcas"
-                  to="/brands"
-                  icon={<SellIcon />}
-                />
-                <Item
-                  title="Ubicaciones"
-                  to="/locations"
-                  icon={<PlaceIcon />}
-                />
-                <Item
-                  title="Rangos"
-                  to="/ranks"
-                  icon={<GradeIcon />}
-                />
-                <Item
-                  title="Roles y Permisos"
-                  to="/roles"
-                  icon={<SecurityIcon />}
-                />
-                <Item
-                  title="Historial"
-                  to="/history"
-                  icon={<HistoryOutlinedIcon />}
-                />
-              </>
+            {/* Ranks */}
+            {can('rank_read') && (
+              <Item
+                title="Rangos"
+                to="/ranks"
+                icon={<GradeIcon />}
+              />
             )}
 
-            <Item
-              title="Calendario"
-              to="/calendar"
-              icon={<CalendarTodayOutlinedIcon />}
-            />
-            <Item
-              title="Preguntas Frecuentes"
-              to="/faq"
-              icon={<HelpOutlineOutlinedIcon />}
-            />
+            {/* History */}
+            {can('history_view') && (
+              <Item
+                title="Historial"
+                to="/history"
+                icon={<HistoryOutlinedIcon />}
+              />
+            )}
 
-            <Typography
-              variant="h6"
-              color={colors.grey[300]}
-              sx={{ m: "15px 0 5px 20px" }}
-            >
-              Gráficos
-            </Typography>
-            <Item title="Bar Chart" to="/bar" icon={<BarChartOutlinedIcon />} />
-            <Item title="Pie Chart" to="/pie" icon={<PieChartOutlineOutlinedIcon />} />
-            <Item title="Line Chart" to="/line" icon={<TimelineOutlinedIcon />} />
-            <Item title="Geography" to="/geography" icon={<MapOutlinedIcon />} />
+            {/* Calendar */}
+            {can('calendar_read') && (
+              <Item
+                title="Calendario"
+                to="/calendar"
+                icon={<CalendarTodayOutlinedIcon />}
+              />
+            )}
+
+            {/* Reports */}
+            {can('report_view') && (
+              <Item
+                title="Reportes"
+                to="/reports"
+                icon={<BarChartOutlinedIcon />}
+              />
+            )}
+
+            {/* FAQ */}
+            {can('faq_read') && (
+              <Item
+                title="Preguntas Frecuentes"
+                to="/faq"
+                icon={<HelpOutlineOutlinedIcon />}
+              />
+            )}
+
           </Box>
         </Menu>
       </ProSidebar>

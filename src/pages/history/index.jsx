@@ -10,31 +10,32 @@ import {
     TableContainer,
     TableHead,
     TableRow,
-    Typography
+    Typography,
+    Button
 } from '@mui/material';
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { useTheme } from "@mui/material";
 import { Token } from "../../theme";
 import api from '../../api/axiosClient';
 import Header from '../../components/Header';
 import { useSearch } from '../../contexts/SearchContext';
 import SearchHighlighter from '../../components/SearchHighlighter';
-
-const POLL_INTERVAL = 5000; // ms
+import { useSocket } from "../../context/SocketContext";
+import { flexibleMatch } from "../../utils/searchUtils";
+import { exportToExcel } from "../../utils/exportUtils";
 
 const History = () => {
     const theme = useTheme();
-    // Memoizar colors para evitar re-renders innecesarios
-    const colors = useMemo(() => Token(theme.palette.mode), [theme.palette.mode]);
+    const colors = Token(theme.palette.mode);
+    const { searchTerm, isSearching } = useSearch();
+    const socket = useSocket();
 
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [isAdmin, setIsAdmin] = useState(false);
 
-    // Contexto de búsqueda
-    const { searchTerm, isSearching } = useSearch();
-
+    // Memoizar colors para evitar re-renders innecesarios
     // Manejo seguro de colores con fallbacks
     const safeColors = useMemo(() => colors || {
         primary: { 400: '#f5f5f5', 300: '#424242' },
@@ -50,13 +51,10 @@ const History = () => {
             return rows;
         }
 
-        return rows.filter(row =>
-            (row.accion && row.accion.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (row.quien && row.quien.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (row.objetivo && row.objetivo.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (row.descripcion && row.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (row.fecha && row.fecha.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
+        return rows.filter(row => {
+            const searchableText = `${row.accion} ${row.quien} ${row.objetivo} ${row.descripcion} ${row.fecha}`;
+            return flexibleMatch(searchableText, searchTerm);
+        });
     }, [rows, isSearching, searchTerm]);
 
     // Verificar autenticación y permisos al montar
@@ -79,18 +77,18 @@ const History = () => {
                 return;
             }
 
-            // Verificar si es admin (roleId === 1)
-            if (user.roleId !== 1) {
-                setError("No tienes permisos para ver el historial (solo administradores)");
+            // Verificar permiso de historial (Admin o permiso explícito)
+            const hasPermission = user.roleId === 1 || (user.permissions && user.permissions.includes('history_view'));
+
+            if (!hasPermission) {
+                setError("No tienes permisos para ver el historial");
                 setLoading(false);
                 return;
             }
 
             setIsAuthenticated(true);
-            setIsAdmin(true);
         };
 
-        // Verificar inmediatamente
         checkAuth();
 
         // Si no está autenticado, reintentamos después de un momento
@@ -100,8 +98,8 @@ const History = () => {
     }, []);
 
     const fetchLogs = useCallback(async ({ silent = false } = {}) => {
-        if (!isAuthenticated || !isAdmin) {
-            console.log('History: No autenticado o no es admin, saltando fetchLogs');
+        if (!isAuthenticated) {
+            console.log('History: No autenticado, saltando fetchLogs');
             return;
         }
 
@@ -147,16 +145,30 @@ const History = () => {
                 setLoading(false);
             }
         }
-    }, [isAuthenticated, isAdmin]);
+    }, [isAuthenticated]);
 
-    // Ejecutar fetchLogs solo cuando esté autenticado y sea admin
+    // Ejecutar fetchLogs solo cuando esté autenticado
     useEffect(() => {
-        if (isAuthenticated && isAdmin) {
+        if (isAuthenticated) {
             fetchLogs();
-            const intervalId = setInterval(() => fetchLogs({ silent: true }), POLL_INTERVAL);
-            return () => clearInterval(intervalId);
         }
-    }, [fetchLogs, isAuthenticated, isAdmin]);
+    }, [fetchLogs, isAuthenticated]);
+
+    // Escuchar eventos de Socket.io
+    useEffect(() => {
+        if (!socket || !isAuthenticated) return;
+
+        const handleHistoryUpdate = (data) => {
+            console.log('🔔 History update received:', data);
+            fetchLogs({ silent: true });
+        };
+
+        socket.on('history_updated', handleHistoryUpdate);
+
+        return () => {
+            socket.off('history_updated', handleHistoryUpdate);
+        };
+    }, [socket, fetchLogs, isAuthenticated]);
 
     // Función helper para obtener el color de la acción
     const getActionColor = useCallback((accion) => {
@@ -246,7 +258,25 @@ const History = () => {
 
     return (
         <Box m="20px">
-            <Header title="HISTORIAL" subtitle="Registro de actividades del sistema" />
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Header title="HISTORIAL" subtitle="Registro de actividades del sistema" />
+                <Button
+                    variant="contained"
+                    color="success"
+                    startIcon={<FileDownloadIcon />}
+                    onClick={() => exportToExcel(filteredRows.map(row => ({
+                        ID: row.id,
+                        Fecha: row.fecha,
+                        Acción: row.accion,
+                        'Realizado por': row.quien,
+                        Objetivo: row.objetivo,
+                        Descripción: row.descripcion
+                    })), 'Historial_Actividades')}
+                    sx={{ fontWeight: 'bold' }}
+                >
+                    Exportar Excel
+                </Button>
+            </Box>
 
             {error && (
                 <Alert severity="error" sx={{ mb: 2 }}>

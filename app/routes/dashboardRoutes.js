@@ -1,11 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const isAdmin = require('../middleware/isAdmin');
+const checkPermission = require('../middleware/checkPermission');
 const DB = require('../classes/db');
 
 // 📊 Obtener estadísticas de inventario por categoría - MEJORADA
-router.get('/inventory-stats', auth, isAdmin, async (req, res, next) => {
+router.get('/inventory-stats', auth, checkPermission('dashboard_view'), async (req, res, next) => {
   try {
     console.log('📊 Obteniendo estadísticas de inventario...');
 
@@ -54,7 +54,7 @@ router.get('/inventory-stats', auth, isAdmin, async (req, res, next) => {
 });
 
 // 📈 Obtener actividad del sistema (últimos 30 días)
-router.get('/activity-stats', auth, isAdmin, async (req, res, next) => {
+router.get('/activity-stats', auth, checkPermission('dashboard_view'), async (req, res, next) => {
   try {
     console.log('📈 Obteniendo estadísticas de actividad...');
 
@@ -116,7 +116,7 @@ router.get('/activity-stats', auth, isAdmin, async (req, res, next) => {
 });
 
 // 📋 Obtener resumen general del sistema
-router.get('/summary', auth, isAdmin, async (req, res, next) => {
+router.get('/summary', auth, checkPermission('dashboard_view'), async (req, res, next) => {
   try {
     console.log('📋 Obteniendo resumen del sistema...');
 

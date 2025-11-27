@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     Box,
     Button,
@@ -30,6 +31,9 @@ import AppSnackbar from "../../components/AppSnackbar";
 import SearchHighlighter from "../../components/SearchHighlighter";
 import { useSearch } from "../../contexts/SearchContext";
 import api from "../../api/axiosClient";
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { flexibleMatch } from "../../utils/searchUtils";
 
 export default function Brands() {
     const theme = useTheme();
@@ -44,6 +48,8 @@ export default function Brands() {
         message: "",
         severity: "success",
     });
+    const socket = useSocket();
+    const { can } = usePermission();
 
     // Estado para diálogo de eliminación
     const [deleteDialog, setDeleteDialog] = useState({
@@ -54,6 +60,13 @@ export default function Brands() {
 
     // Contexto de búsqueda
     const { searchTerm, isSearching } = useSearch();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!can('brand_read')) {
+            navigate('/');
+        }
+    }, [can, navigate]);
 
     const showSnackbar = (message, severity = "success") => {
         setSnackbar({ open: true, message, severity });
@@ -75,34 +88,29 @@ export default function Brands() {
         }
     }, []);
 
-    const POLL_INTERVAL = 5000;
-
     useEffect(() => {
         fetchBrands();
-        const intervalId = setInterval(() => fetchBrands({ silent: true }), POLL_INTERVAL);
-        return () => clearInterval(intervalId);
     }, [fetchBrands]);
 
-    // Escuchar eventos de otras ventanas/pestañas
+    // Escuchar eventos de Socket.io
     useEffect(() => {
-        const handleReload = () => fetchBrands({ silent: true });
+        if (!socket) return;
 
-        window.addEventListener("brandCreated", handleReload);
-        window.addEventListener("brandUpdated", handleReload);
-        window.addEventListener("brandDeleted", handleReload);
-
-        const handleStorageChange = (e) => {
-            if (e.key === 'brandChanged') handleReload();
+        const handleBrandUpdate = (data) => {
+            console.log('🔔 Brand update received:', data);
+            fetchBrands({ silent: true });
         };
-        window.addEventListener("storage", handleStorageChange);
+
+        socket.on('brand_created', handleBrandUpdate);
+        socket.on('brand_updated', handleBrandUpdate);
+        socket.on('brand_deleted', handleBrandUpdate);
 
         return () => {
-            window.removeEventListener("brandCreated", handleReload);
-            window.removeEventListener("brandUpdated", handleReload);
-            window.removeEventListener("brandDeleted", handleReload);
-            window.removeEventListener("storage", handleStorageChange);
+            socket.off('brand_created', handleBrandUpdate);
+            socket.off('brand_updated', handleBrandUpdate);
+            socket.off('brand_deleted', handleBrandUpdate);
         };
-    }, [fetchBrands]);
+    }, [socket, fetchBrands]);
 
     // Filtro de marcas con búsqueda
     const filteredBrands = useMemo(() => {
@@ -113,10 +121,8 @@ export default function Brands() {
         }
 
         return brands.filter((brand) => {
-            const searchLower = searchTerm.toLowerCase();
-            return (
-                brand.name?.toLowerCase().includes(searchLower)
-            );
+            const searchableText = `${brand.name}`;
+            return flexibleMatch(searchableText, searchTerm);
         });
     }, [brands, isSearching, searchTerm]);
 
@@ -147,17 +153,13 @@ export default function Brands() {
             if (editingBrand) {
                 await api.put(`/api/brands/${editingBrand.id}`, formData);
                 showSnackbar("Marca actualizada exitosamente");
-                window.dispatchEvent(new Event("brandUpdated"));
-                localStorage.setItem('brandChanged', Date.now().toString());
             } else {
                 await api.post("/api/brands", formData);
                 showSnackbar("Marca creada exitosamente");
-                window.dispatchEvent(new Event("brandCreated"));
-                localStorage.setItem('brandChanged', Date.now().toString());
             }
 
             handleClose();
-            fetchBrands();
+            // fetchBrands(); // Socket will handle update
         } catch (error) {
             const message = error.response?.data?.error || "Error al procesar la solicitud";
             showSnackbar(message, "error");
@@ -176,9 +178,7 @@ export default function Brands() {
         try {
             await api.delete(`/api/brands/${deleteDialog.brandId}`);
             showSnackbar("Marca eliminada exitosamente");
-            window.dispatchEvent(new Event("brandDeleted"));
-            localStorage.setItem('brandChanged', Date.now().toString());
-            fetchBrands();
+            // fetchBrands(); // Socket will handle update
         } catch (error) {
             const message = error.response?.data?.error || "Error al eliminar la marca";
             showSnackbar(message, "error");
@@ -202,7 +202,7 @@ export default function Brands() {
         });
     };
 
-    if (loading) {
+    if (loading && !brands.length) {
         return (
             <Box m="20px">
                 <Header title="Marcas" subtitle="Cargando..." />
@@ -218,15 +218,17 @@ export default function Brands() {
             />
 
             <Box display="flex" justifyContent="flex-end" alignItems="center" mb="20px">
-                <Button
-                    variant="contained"
-                    color="secondary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpen()}
-                    sx={{ px: 3, py: 1.5 }}
-                >
-                    Nueva Marca
-                </Button>
+                {can('brand_create') && (
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        startIcon={<AddIcon />}
+                        onClick={() => handleOpen()}
+                        sx={{ px: 3, py: 1.5 }}
+                    >
+                        Nueva Marca
+                    </Button>
+                )}
             </Box>
 
             <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
@@ -290,21 +292,25 @@ export default function Brands() {
                                     </Typography>
                                 </TableCell>
                                 <TableCell align="center">
-                                    <IconButton
-                                        onClick={() => handleOpen(brand)}
-                                        color="warning"
-                                        size="small"
-                                        sx={{ mr: 1 }}
-                                    >
-                                        <EditIcon />
-                                    </IconButton>
-                                    <IconButton
-                                        onClick={() => handleDelete(brand.id, brand.name)}
-                                        color="error"
-                                        size="small"
-                                    >
-                                        <DeleteIcon />
-                                    </IconButton>
+                                    {can('brand_update') && (
+                                        <IconButton
+                                            onClick={() => handleOpen(brand)}
+                                            color="warning"
+                                            size="small"
+                                            sx={{ mr: 1 }}
+                                        >
+                                            <EditIcon />
+                                        </IconButton>
+                                    )}
+                                    {can('brand_delete') && (
+                                        <IconButton
+                                            onClick={() => handleDelete(brand.id, brand.name)}
+                                            color="error"
+                                            size="small"
+                                        >
+                                            <DeleteIcon />
+                                        </IconButton>
+                                    )}
                                 </TableCell>
                             </TableRow>
                         ))}

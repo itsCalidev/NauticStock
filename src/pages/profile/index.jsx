@@ -18,6 +18,7 @@ import Header from "../../components/Header";
 import { Token } from "../../theme";
 import AppSnackbar from "../../components/AppSnackbar";
 import defaultPic from "../../assets/default.png";
+import { useSocket } from "../../context/SocketContext";
 
 const schema = yup.object().shape({
   password: yup.string().min(8, "Mínimo 8 caracteres").required("Requerido"),
@@ -28,17 +29,18 @@ const schema = yup.object().shape({
 });
 
 const Profile = () => {
-  const theme       = useTheme();
-  const colors      = Token(theme.palette.mode);
+  const theme = useTheme();
+  const colors = Token(theme.palette.mode);
   const isNonMobile = useMediaQuery("(min-width:600px)");
-  const navigate    = useNavigate();
+  const navigate = useNavigate();
+  const socket = useSocket();
 
-  const [user, setUser]                   = useState(null);
+  const [user, setUser] = useState(null);
   const [initialValues, setInitialValues] = useState(null);
-  const [avatarFile, setAvatarFile]       = useState(null);
-  const [previewUrl, setPreviewUrl]       = useState(null);
-  const [uploading, setUploading]         = useState(false);
-  const [snackbar, setSnackbar]           = useState({
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [snackbar, setSnackbar] = useState({
     open: false, message: "", severity: "info"
   });
 
@@ -46,25 +48,87 @@ const Profile = () => {
   const prevUrlRef = useRef();
 
   useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) {
-      const u = JSON.parse(stored);
-      setUser(u);
-      setInitialValues({
-        name:             u.name     || "",
-        email:            u.email    || "",
-        account:          u.account  || "",
-        rank:             u.ranks    || "",
-        password:         "",
-        confirm_password: ""
-      });
-    }
+    const fetchUserData = async () => {
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const localUser = JSON.parse(stored);
+        setUser(localUser);
+
+        // Initial set from local storage
+        setInitialValues({
+          name: localUser.name || "",
+          email: localUser.email || "",
+          account: localUser.account || "",
+          rank: localUser.ranks || localUser.rank || "",
+          password: "",
+          confirm_password: ""
+        });
+
+        try {
+          // Fetch latest data
+          const { data } = await api.get(`/api/users/${localUser.id}`);
+          const remoteUser = data.data || data;
+
+          // Update local storage and state
+          localStorage.setItem("user", JSON.stringify(remoteUser));
+          setUser(remoteUser);
+          setInitialValues({
+            name: remoteUser.name || "",
+            email: remoteUser.email || "",
+            account: remoteUser.account || "",
+            rank: remoteUser.ranks || remoteUser.rank || "",
+            password: "",
+            confirm_password: ""
+          });
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+        }
+      }
+    };
+
+    fetchUserData();
+
     return () => {
       if (prevUrlRef.current) {
         URL.revokeObjectURL(prevUrlRef.current);
       }
     };
   }, []);
+
+  // Escuchar eventos de Socket.io para actualizar el perfil si cambia desde otro lado (ej: admin cambia rol)
+  useEffect(() => {
+    if (!socket || !user) return;
+
+    const handleUserUpdate = (data) => {
+      // Si el usuario actualizado es el usuario actual
+      if (data.id === user.id || (data.data && data.data.id === user.id)) {
+        console.log('🔔 Profile update received:', data);
+        // Refrescar datos del usuario
+        api.get(`/api/users/${user.id}`).then(res => {
+          const updatedUser = res.data.data || res.data;
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+          setUser(updatedUser);
+          setInitialValues({
+            name: updatedUser.name || "",
+            email: updatedUser.email || "",
+            account: updatedUser.account || "",
+            rank: updatedUser.ranks || updatedUser.rank || "",
+            password: "",
+            confirm_password: ""
+          });
+          showSnackbar("Tu perfil ha sido actualizado remotamente", "info");
+        }).catch(err => console.error("Error refreshing profile", err));
+      }
+    };
+
+    socket.on('user_updated', handleUserUpdate);
+    socket.on('user_status_changed', handleUserUpdate);
+
+    return () => {
+      socket.off('user_updated', handleUserUpdate);
+      socket.off('user_status_changed', handleUserUpdate);
+    };
+  }, [socket, user]);
 
   const showSnackbar = (message, severity = "info") => {
     setSnackbar({ open: true, message, severity });
@@ -99,7 +163,7 @@ const Profile = () => {
       setUser(updated);
       setPreviewUrl(null);
       setAvatarFile(null);
-      window.dispatchEvent(new Event("userUpdated"));
+      // window.dispatchEvent(new Event("userUpdated")); // Socket will handle this if needed, but local update is faster
       showSnackbar("Foto de perfil actualizada", "success");
     } catch (err) {
       showSnackbar(err.message || "Error subiendo la imagen", "error");
@@ -108,32 +172,32 @@ const Profile = () => {
     }
   };
 
-const handlePasswordSubmit = async values => {
-  if (!values.password || !values.confirm_password) {
-    showSnackbar("Por favor ingresa y confirma la contraseña.", "warning");
-    return;
-  }
-  if (values.password !== values.confirm_password) {
-    showSnackbar("Las contraseñas no coinciden.", "error");
-    return;
-  }
-  try {
-    // 👇 CAMBIAR LA RUTA: usar /api/users/me/password en lugar de /users/${user.id}
-    await api.put(`/api/users/me/password`, { password: values.password });
-    showSnackbar(
-      "La contraseña ha sido actualizada. Por razones de seguridad se cerrará la sesión.",
-      "info"
-    );
-    setTimeout(() => {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      delete api.defaults.headers.common["Authorization"];
-      navigate("/login", { replace: true });
-    }, 3500);
-  } catch (err) {
-    showSnackbar(err.response?.data?.error || "Error al actualizar.", "error");
-  }
-};
+  const handlePasswordSubmit = async values => {
+    if (!values.password || !values.confirm_password) {
+      showSnackbar("Por favor ingresa y confirma la contraseña.", "warning");
+      return;
+    }
+    if (values.password !== values.confirm_password) {
+      showSnackbar("Las contraseñas no coinciden.", "error");
+      return;
+    }
+    try {
+      // 👇 CAMBIAR LA RUTA: usar /api/users/me/password en lugar de /users/${user.id}
+      await api.put(`/api/users/me/password`, { password: values.password });
+      showSnackbar(
+        "La contraseña ha sido actualizada. Por razones de seguridad se cerrará la sesión.",
+        "info"
+      );
+      setTimeout(() => {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        delete api.defaults.headers.common["Authorization"];
+        navigate("/login", { replace: true });
+      }, 3500);
+    } catch (err) {
+      showSnackbar(err.response?.data?.error || "Error al actualizar.", "error");
+    }
+  };
 
   if (!initialValues) return null;
 
@@ -254,7 +318,7 @@ const handlePasswordSubmit = async values => {
                     InputProps={{ readOnly: true }}
                     inputProps={{
                       style: { cursor: "pointer" },
-                      onClick:  () => showSnackbar(`Si deseas cambiar tu ${label}, contacta al Administrador.`),
+                      onClick: () => showSnackbar(`Si deseas cambiar tu ${label}, contacta al Administrador.`),
                       onSelect: () => showSnackbar(`Si deseas cambiar tu ${label}, contacta al Administrador.`),
                     }}
                   />

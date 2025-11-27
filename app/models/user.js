@@ -10,20 +10,20 @@ class User extends Model {
       "password",
       "account",
       "email",
-      "rank_id", // 👈 Changed from ranks
+      "rank_id",
       "status",
       "roleId",
     ];
 
     this.initializeDB();
-
   }
 
   /** Busca un usuario por su email */
   async findByEmail(email) {
     try {
-      // 👇 USAR QUERY BUILDER CORRECTAMENTE
-      const rows = await this.getDB()
+      const db = this.getDB();
+      db.reset();
+      const rows = await db
         .select(["*"])
         .where([["email", email]])
         .get();
@@ -36,17 +36,22 @@ class User extends Model {
 
   async findById(id) {
     try {
-      const rows = await this.getDB()
-        .select(["*"])
-        .where([["user.id", id]]) // 👈 CAMBIO PRINCIPAL
+      const db = this.getDB();
+      db.reset();
+      const rows = await db
+        .select(["user.*", "ranks.name AS ranks", "role.role AS role_name"])
+        .join("ranks", "ranks.id = user.rank_id", "LEFT")
+        .join("role", "role.id = user.roleId", "LEFT")
+        .where([["user.id", id]])
         .get();
+
+
       return rows[0] || null;
     } catch (error) {
       console.error('❌ Error en findById:', error);
       throw error;
     }
   }
-
 
   async registerUser(data) {
     try {
@@ -155,17 +160,17 @@ class User extends Model {
         "user.roleId",
         "user.rank_id",
         "role.role AS access",
-        "ranks.name AS ranks", // 👈 Alias to maintain compatibility
+        "ranks.name AS ranks",
         "user.last_access",
       ];
 
       const db = this.getDB();
-      db.reset(); // 👈 AGREGAR RESET
+      db.reset();
 
       const rows = await db
         .select(cols)
         .join("role", "role.id = user.roleId", "LEFT")
-        .join("ranks", "ranks.id = user.rank_id", "LEFT") // 👈 Join with ranks
+        .join("ranks", "ranks.id = user.rank_id", "LEFT")
         .get();
 
       console.log('📋 Users retrieved:', rows.length);

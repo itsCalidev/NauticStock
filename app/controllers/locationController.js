@@ -1,7 +1,8 @@
 const Controller = require('./Controller');
 const Location = require('../models/location');
 const History = require('../models/history');
-const Validator = require('../classes/Validator');
+const Validator = require('../classes/validator');
+const socketManager = require('../classes/socketManager');
 
 class LocationController extends Controller {
   constructor() {
@@ -45,6 +46,10 @@ class LocationController extends Controller {
       };
 
       const result = await this.locationModel.createLocation(locationData);
+
+      // Emit socket event
+      socketManager.emit('location_created', { id: result.insertId, ...locationData });
+      socketManager.emit('history_updated', {});
 
       await this.historyModel.registerLog({
         action_type: 'Ubicación Creada',
@@ -92,6 +97,10 @@ class LocationController extends Controller {
 
       await this.locationModel.updateLocation(id, locationData);
 
+      // Emit socket event
+      socketManager.emit('location_updated', { id, ...locationData });
+      socketManager.emit('history_updated', {});
+
       await this.historyModel.registerLog({
         action_type: 'Ubicación Actualizada',
         performed_by: req.user.id,
@@ -119,6 +128,10 @@ class LocationController extends Controller {
       }
 
       await this.locationModel.deleteLocation(id);
+
+      // Emit socket event
+      socketManager.emit('location_deleted', { id });
+      socketManager.emit('history_updated', {});
 
       await this.historyModel.registerLog({
         action_type: 'Ubicación Eliminada',
@@ -178,6 +191,10 @@ class LocationController extends Controller {
       }
 
       await this.locationModel.enableLocation(id);
+
+      // Emit socket event
+      socketManager.emit('location_updated', { id, status: 0 });
+      socketManager.emit('history_updated', {});
 
       await this.historyModel.registerLog({
         action_type: 'Ubicación Rehabilitada',

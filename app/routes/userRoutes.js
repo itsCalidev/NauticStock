@@ -24,10 +24,10 @@ router.post(
   }
 );
 
-// Obtener todos (no log)         ← solo admin
+// Obtener todos (no log)         ← validado en controlador
 router.get(
   '/',
-  auth, isAdmin,
+  auth,
   async (req, res) => {
     await userCtrl.getAllUsers(req, res);
   }

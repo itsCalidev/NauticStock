@@ -19,8 +19,13 @@ const rankRoutes = require('./app/routes/rankRoutes');
 const providerRoutes = require('./app/routes/providerRoutes');
 const faqRoutes = require('./app/routes/faqRoutes');
 const roleRoutes = require('./app/routes/roleRoutes');
+const orderRoutes = require('./app/routes/orderRoutes');
+
+const http = require('http');
+const socketManager = require('./app/classes/socketManager');
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
 // 1) Security & Efficiency Middleware
@@ -30,6 +35,9 @@ app.use(helmet({
 }));
 app.use(cors());
 app.use(compression());
+
+// Initialize Socket.io
+socketManager.initialize(server);
 
 // Rate Limiting
 const loginLimiter = rateLimit({
@@ -69,6 +77,7 @@ app.use('/api/ranks', rankRoutes);
 app.use('/api/providers', providerRoutes);
 app.use('/api/faqs', faqRoutes);
 app.use('/api/roles', roleRoutes);
+app.use('/api/orders', orderRoutes);
 app.use('/users', avatarRoutes);
 
 // 5) Servir React build
@@ -92,4 +101,4 @@ app.use((err, req, res, next) => {
 });
 
 // 7) Arrancar servidor
-app.listen(port, () => console.log(`Servidor en puerto ${port}`));
+server.listen(port, '0.0.0.0', () => console.log(`Servidor en puerto ${port}`));
