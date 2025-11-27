@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     Box,
     Typography,
@@ -27,6 +28,11 @@ import { Token } from "../../theme";
 import api from "../../api/axiosClient";
 import { Formik } from "formik";
 import * as yup from "yup";
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { useSearch } from "../../contexts/SearchContext";
+import SearchHighlighter from "../../components/SearchHighlighter";
+import { flexibleMatch } from "../../utils/searchUtils";
 
 const Faq = () => {
     const theme = useTheme();
@@ -40,6 +46,21 @@ const Faq = () => {
         faqId: null,
         question: ''
     });
+    const socket = useSocket();
+    const { can } = usePermission();
+    const { searchTerm } = useSearch();
+
+    const filteredFaqs = faqs.filter(faq => {
+        const searchableText = `${faq.question} ${faq.answer} ${faq.category_name}`;
+        return flexibleMatch(searchableText, searchTerm);
+    });
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!can('faq_read')) {
+            navigate('/');
+        }
+    }, [can, navigate]);
 
     const fetchFaqs = useCallback(async ({ silent = false } = {}) => {
         try {
@@ -63,35 +84,45 @@ const Faq = () => {
         }
     };
 
-    const POLL_INTERVAL = 5000;
-
     useEffect(() => {
         fetchFaqs();
         fetchCategories();
-        const intervalId = setInterval(() => fetchFaqs({ silent: true }), POLL_INTERVAL);
-        return () => clearInterval(intervalId);
     }, [fetchFaqs]);
 
-    // Escuchar eventos de otras ventanas/pestañas
+    // Escuchar eventos de Socket.io
     useEffect(() => {
-        const handleReload = () => fetchFaqs({ silent: true });
+        if (!socket) return;
 
-        window.addEventListener("faqCreated", handleReload);
-        window.addEventListener("faqUpdated", handleReload);
-        window.addEventListener("faqDeleted", handleReload);
-
-        const handleStorageChange = (e) => {
-            if (e.key === 'faqChanged') handleReload();
+        const handleFaqUpdate = (data) => {
+            console.log('🔔 FAQ update received:', data);
+            fetchFaqs({ silent: true });
         };
-        window.addEventListener("storage", handleStorageChange);
+
+        const handleCategoryUpdate = (data) => {
+            console.log('🔔 FAQ Category update received:', data);
+            fetchCategories();
+        };
+
+        socket.on('faq_created', handleFaqUpdate);
+        socket.on('faq_updated', handleFaqUpdate);
+        socket.on('faq_deleted', handleFaqUpdate);
+        socket.on('faq_status_changed', handleFaqUpdate);
+
+        // Also listen for category changes as they affect the dropdown
+        socket.on('category_created', handleCategoryUpdate); // Assuming this event exists or will exist
+        socket.on('category_updated', handleCategoryUpdate);
+        socket.on('category_deleted', handleCategoryUpdate);
 
         return () => {
-            window.removeEventListener("faqCreated", handleReload);
-            window.removeEventListener("faqUpdated", handleReload);
-            window.removeEventListener("faqDeleted", handleReload);
-            window.removeEventListener("storage", handleStorageChange);
+            socket.off('faq_created', handleFaqUpdate);
+            socket.off('faq_updated', handleFaqUpdate);
+            socket.off('faq_deleted', handleFaqUpdate);
+            socket.off('faq_status_changed', handleFaqUpdate);
+            socket.off('category_created', handleCategoryUpdate);
+            socket.off('category_updated', handleCategoryUpdate);
+            socket.off('category_deleted', handleCategoryUpdate);
         };
-    }, [fetchFaqs]);
+    }, [socket, fetchFaqs]);
 
     const handleOpen = (faq = null) => {
         setCurrentFaq(faq);
@@ -110,9 +141,7 @@ const Faq = () => {
     const confirmDelete = async () => {
         try {
             await api.delete(`/api/faqs/${deleteDialog.faqId}`);
-            window.dispatchEvent(new Event("faqDeleted"));
-            localStorage.setItem('faqChanged', Date.now().toString());
-            fetchFaqs();
+            // fetchFaqs(); // Socket will handle update
         } catch (error) {
             console.error("Error deleting FAQ:", error);
         } finally {
@@ -124,14 +153,10 @@ const Faq = () => {
         try {
             if (currentFaq) {
                 await api.put(`/api/faqs/${currentFaq.id}`, values);
-                window.dispatchEvent(new Event("faqUpdated"));
-                localStorage.setItem('faqChanged', Date.now().toString());
             } else {
                 await api.post("/api/faqs", values);
-                window.dispatchEvent(new Event("faqCreated"));
-                localStorage.setItem('faqChanged', Date.now().toString());
             }
-            fetchFaqs();
+            // fetchFaqs(); // Socket will handle update
             handleClose();
         } catch (error) {
             console.error("Error saving FAQ:", error);
@@ -156,39 +181,49 @@ const Faq = () => {
                 <Typography variant="h4" fontWeight="bold" color={colors.grey[100]}>
                     Preguntas Frecuentes (FAQ)
                 </Typography>
-                <Button
-                    variant="contained"
-                    color="secondary"
-                    startIcon={<AddCircleIcon />}
-                    onClick={() => handleOpen()}
-                >
-                    Nueva Pregunta
-                </Button>
+                {can('faq_create') && (
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        startIcon={<AddCircleIcon />}
+                        onClick={() => handleOpen()}
+                    >
+                        Nueva Pregunta
+                    </Button>
+                )}
             </Box>
 
-            {faqs.map((faq) => (
+            {filteredFaqs.map((faq) => (
                 <Accordion key={faq.id} defaultExpanded={false} sx={{ backgroundColor: colors.primary[400], mb: 1 }}>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                         <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
                             <Typography color={colors.greenAccent[500]} variant="h5">
-                                {faq.question}
+                                <SearchHighlighter text={faq.question} searchTerm={searchTerm} />
                             </Typography>
                             <Box>
                                 {faq.category_name && (
-                                    <Chip label={faq.category_name} size="small" sx={{ mr: 2 }} />
+                                    <Chip
+                                        label={<SearchHighlighter text={faq.category_name} searchTerm={searchTerm} />}
+                                        size="small"
+                                        sx={{ mr: 2 }}
+                                    />
                                 )}
-                                <IconButton onClick={(e) => { e.stopPropagation(); handleOpen(faq); }} size="small">
-                                    <EditIcon />
-                                </IconButton>
-                                <IconButton onClick={(e) => { e.stopPropagation(); handleDelete(faq.id, faq.question); }} size="small" color="error">
-                                    <DeleteIcon />
-                                </IconButton>
+                                {can('faq_update') && (
+                                    <IconButton onClick={(e) => { e.stopPropagation(); handleOpen(faq); }} size="small">
+                                        <EditIcon />
+                                    </IconButton>
+                                )}
+                                {can('faq_delete') && (
+                                    <IconButton onClick={(e) => { e.stopPropagation(); handleDelete(faq.id, faq.question); }} size="small" color="error">
+                                        <DeleteIcon />
+                                    </IconButton>
+                                )}
                             </Box>
                         </Box>
                     </AccordionSummary>
                     <AccordionDetails>
                         <Typography>
-                            {faq.answer}
+                            <SearchHighlighter text={faq.answer} searchTerm={searchTerm} />
                         </Typography>
                     </AccordionDetails>
                 </Accordion>

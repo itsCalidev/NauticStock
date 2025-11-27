@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     Box,
     Button,
@@ -36,6 +37,11 @@ import Header from "../../components/Header";
 import { Token } from "../../theme";
 import AppSnackbar from "../../components/AppSnackbar";
 import api from "../../api/axiosClient";
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { useSearch } from "../../contexts/SearchContext";
+import SearchHighlighter from "../../components/SearchHighlighter";
+import { flexibleMatch } from "../../utils/searchUtils";
 
 export default function Roles() {
     const theme = useTheme();
@@ -54,6 +60,22 @@ export default function Roles() {
         message: "",
         severity: "success",
     });
+
+    const socket = useSocket();
+    const { can } = usePermission();
+    const { searchTerm } = useSearch();
+
+    const filteredRoles = roles.filter(role => {
+        const searchableText = `${role.role}`;
+        return flexibleMatch(searchableText, searchTerm);
+    });
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!can('role_read')) {
+            navigate('/');
+        }
+    }, [can, navigate]);
 
     const [deleteDialog, setDeleteDialog] = useState({
         open: false,
@@ -82,34 +104,29 @@ export default function Roles() {
         }
     }, []);
 
-    const POLL_INTERVAL = 5000;
-
     useEffect(() => {
         fetchData();
-        const intervalId = setInterval(() => fetchData({ silent: true }), POLL_INTERVAL);
-        return () => clearInterval(intervalId);
     }, [fetchData]);
 
-    // Escuchar eventos de otras ventanas/pestañas
+    // Escuchar eventos de Socket.io
     useEffect(() => {
-        const handleReload = () => fetchData({ silent: true });
+        if (!socket) return;
 
-        window.addEventListener("roleCreated", handleReload);
-        window.addEventListener("roleUpdated", handleReload);
-        window.addEventListener("roleDeleted", handleReload);
-
-        const handleStorageChange = (e) => {
-            if (e.key === 'roleChanged') handleReload();
+        const handleRoleUpdate = (data) => {
+            console.log('🔔 Role update received:', data);
+            fetchData({ silent: true });
         };
-        window.addEventListener("storage", handleStorageChange);
+
+        socket.on('role_created', handleRoleUpdate);
+        socket.on('role_updated', handleRoleUpdate);
+        socket.on('role_deleted', handleRoleUpdate);
 
         return () => {
-            window.removeEventListener("roleCreated", handleReload);
-            window.removeEventListener("roleUpdated", handleReload);
-            window.removeEventListener("roleDeleted", handleReload);
-            window.removeEventListener("storage", handleStorageChange);
+            socket.off('role_created', handleRoleUpdate);
+            socket.off('role_updated', handleRoleUpdate);
+            socket.off('role_deleted', handleRoleUpdate);
         };
-    }, [fetchData]);
+    }, [socket, fetchData]);
 
     const handleOpen = (role = null) => {
         if (role) {
@@ -134,11 +151,39 @@ export default function Roles() {
         setFormData({ name: "", permissions: [] });
     };
 
-    const handlePermissionChange = (permId) => {
+    const handlePermissionChange = (permId, modulePerms) => {
         setFormData(prev => {
-            const newPerms = prev.permissions.includes(permId)
-                ? prev.permissions.filter(id => id !== permId)
-                : [...prev.permissions, permId];
+            const isChecked = prev.permissions.includes(permId);
+            let newPerms = [...prev.permissions];
+
+            // Find the permission object
+            const perm = modulePerms.find(p => p.id === permId);
+            if (!perm) return prev;
+
+            const isRead = perm.name.endsWith('_read') || perm.name.endsWith('_view');
+
+            if (isChecked) {
+                // Unchecking
+                newPerms = newPerms.filter(id => id !== permId);
+
+                // If unchecking read/view, uncheck all others in module
+                if (isRead) {
+                    const moduleIds = modulePerms.map(p => p.id);
+                    newPerms = newPerms.filter(id => !moduleIds.includes(id));
+                }
+            } else {
+                // Checking
+                newPerms.push(permId);
+
+                // If checking non-read, auto-check read
+                if (!isRead) {
+                    const readPerm = modulePerms.find(p => p.name.endsWith('_read') || p.name.endsWith('_view'));
+                    if (readPerm && !newPerms.includes(readPerm.id)) {
+                        newPerms.push(readPerm.id);
+                    }
+                }
+            }
+
             return { ...prev, permissions: newPerms };
         });
     };
@@ -170,16 +215,12 @@ export default function Roles() {
             if (editingRole) {
                 await api.put(`/api/roles/${editingRole.id}`, formData);
                 showSnackbar("Rol actualizado exitosamente");
-                window.dispatchEvent(new Event("roleUpdated"));
-                localStorage.setItem('roleChanged', Date.now().toString());
             } else {
                 await api.post("/api/roles", formData);
                 showSnackbar("Rol creado exitosamente");
-                window.dispatchEvent(new Event("roleCreated"));
-                localStorage.setItem('roleChanged', Date.now().toString());
             }
             handleClose();
-            fetchData();
+            // fetchData(); // Socket will handle update
         } catch (error) {
             const message = error.response?.data?.error || "Error al guardar el rol";
             showSnackbar(message, "error");
@@ -194,9 +235,7 @@ export default function Roles() {
         try {
             await api.delete(`/api/roles/${deleteDialog.roleId}`);
             showSnackbar("Rol eliminado exitosamente");
-            window.dispatchEvent(new Event("roleDeleted"));
-            localStorage.setItem('roleChanged', Date.now().toString());
-            fetchData();
+            // fetchData(); // Socket will handle update
         } catch (error) {
             const message = error.response?.data?.error || "Error al eliminar el rol";
             showSnackbar(message, "error");
@@ -218,14 +257,16 @@ export default function Roles() {
             <Header title="Gestión de Roles y Permisos" subtitle="Administra los roles de usuario y sus accesos" />
 
             <Box display="flex" justifyContent="flex-end" mb={2}>
-                <Button
-                    variant="contained"
-                    color="secondary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpen()}
-                >
-                    Nuevo Rol
-                </Button>
+                {can('role_create') && (
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        startIcon={<AddIcon />}
+                        onClick={() => handleOpen()}
+                    >
+                        Nuevo Rol
+                    </Button>
+                )}
             </Box>
 
             <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
@@ -238,9 +279,11 @@ export default function Roles() {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {roles.map((role) => (
+                        {filteredRoles.map((role) => (
                             <TableRow key={role.id} hover>
-                                <TableCell sx={{ fontWeight: 'bold' }}>{role.role}</TableCell>
+                                <TableCell sx={{ fontWeight: 'bold' }}>
+                                    <SearchHighlighter text={role.role} searchTerm={searchTerm} />
+                                </TableCell>
                                 <TableCell>
                                     {role.permissions && role.permissions.length > 0 ? (
                                         <Typography variant="body2">
@@ -253,10 +296,12 @@ export default function Roles() {
                                     )}
                                 </TableCell>
                                 <TableCell align="center">
-                                    <IconButton onClick={() => handleOpen(role)} color="warning">
-                                        <EditIcon />
-                                    </IconButton>
-                                    {role.id !== 1 && ( // No permitir borrar admin
+                                    {can('role_update') && (
+                                        <IconButton onClick={() => handleOpen(role)} color="warning">
+                                            <EditIcon />
+                                        </IconButton>
+                                    )}
+                                    {can('role_delete') && role.id !== 1 && ( // No permitir borrar admin
                                         <IconButton onClick={() => handleDelete(role.id, role.role)} color="error">
                                             <DeleteIcon />
                                         </IconButton>
@@ -318,13 +363,21 @@ export default function Roles() {
                                                         control={
                                                             <Checkbox
                                                                 checked={formData.permissions.includes(perm.id)}
-                                                                onChange={() => handlePermissionChange(perm.id)}
+                                                                onChange={() => handlePermissionChange(perm.id, perms)}
                                                                 size="small"
+                                                                disabled={
+                                                                    !perm.name.endsWith('_read') &&
+                                                                    !perm.name.endsWith('_view') &&
+                                                                    !formData.permissions.includes(perms.find(p => p.name.endsWith('_read') || p.name.endsWith('_view'))?.id)
+                                                                }
                                                                 sx={{
                                                                     color: colors.greenAccent[200],
                                                                     '&.Mui-checked': {
                                                                         color: colors.greenAccent[500],
                                                                     },
+                                                                    '&.Mui-disabled': {
+                                                                        color: colors.grey[600],
+                                                                    }
                                                                 }}
                                                             />
                                                         }

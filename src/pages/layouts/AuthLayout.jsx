@@ -5,10 +5,12 @@ import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import AccessibilitySidebar from "./SidebarAccesibility";
 import AppSnackbar from "../../components/AppSnackbar";
+import { useSocket } from "../../context/SocketContext";
 
 export default function AuthLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const socket = useSocket();
   const [snack, setSnack] = useState({
     open: false,
     message: "",
@@ -19,9 +21,8 @@ export default function AuthLayout() {
     const stored = localStorage.getItem("user");
     if (!stored || stored === "undefined") return;
 
-    let me;
     try {
-      me = JSON.parse(stored);
+      JSON.parse(stored);
     } catch (e) {
       console.error("Error parsing user in AuthLayout", e);
       localStorage.removeItem("user");
@@ -31,58 +32,58 @@ export default function AuthLayout() {
 
     const checkUserStatus = async () => {
       try {
-        console.log('🔍 Verificando estado del usuario:', me.id);
+        // Read fresh user data from localStorage to avoid closure staleness
+        const currentStored = localStorage.getItem("user");
+        if (!currentStored) return;
+        const currentUser = JSON.parse(currentStored);
 
         // Verificar estado del usuario
-        const response = await api.get(`/api/users/${me.id}`);
+        const response = await api.get(`/api/users/${currentUser.id}`);
 
-        // 👇 NUEVO: Log detallado de la respuesta
-        console.log('📡 Respuesta completa:', response);
-        console.log('📡 response.data:', response.data);
-        console.log('📡 Tipo de response.data:', typeof response.data);
-        console.log('📡 Es array response.data:', Array.isArray(response.data));
-
-        // 👇 CORREGIR: Verificar diferentes estructuras de respuesta
         let userData = null;
 
         // Opción 1: La respuesta directa es el usuario
         if (response.data && response.data.id) {
           userData = response.data;
-          console.log('✅ Estructura: Datos directos');
         }
         // Opción 2: Los datos están en response.data.data
         else if (response.data && response.data.data && response.data.data.id) {
           userData = response.data.data;
-          console.log('✅ Estructura: data.data');
         }
         // Opción 3: Los datos están en response.data[0] (si es array)
         else if (response.data && Array.isArray(response.data) && response.data[0] && response.data[0].id) {
           userData = response.data[0];
-          console.log('✅ Estructura: Array[0]');
         }
 
         if (!userData || !userData.id) {
-          console.log('❌ Usuario no encontrado en ninguna estructura');
-          console.log('❌ response.data completo:', JSON.stringify(response.data, null, 2));
           handleLogout("Tu cuenta ha sido eliminada. Serás redirigido al login.");
           return;
         }
 
-        console.log('📋 Datos del usuario encontrados:', userData);
-
         // Si el usuario fue deshabilitado (status = 1)
         if (userData.status === 1) {
-          console.log('🚫 Usuario deshabilitado - cerrando sesión');
           handleLogout("Tu cuenta ha sido deshabilitada por el administrador. Contacta al equipo de soporte.");
           return;
         }
 
-        console.log('✅ Estado del usuario verificado correctamente');
+        // ✅ ACTUALIZAR LOCALSTORAGE CON NUEVOS DATOS (PERMISOS, ROL, ETC.)
+        // Esto permite que los cambios de permisos se reflejen sin relogin
+
+        // Crear copias para comparar sin last_access (que cambia en cada request)
+        const currentUserCompare = { ...currentUser };
+        const userDataCompare = { ...userData };
+        delete currentUserCompare.last_access;
+        delete userDataCompare.last_access;
+
+        if (JSON.stringify(currentUserCompare) !== JSON.stringify(userDataCompare)) {
+          localStorage.setItem("user", JSON.stringify(userData));
+
+          // Disparar evento para que otros componentes se actualicen
+          window.dispatchEvent(new Event("userUpdated"));
+        }
 
       } catch (err) {
         console.error('❌ Error verificando estado del usuario:', err);
-        console.error('❌ Error response:', err.response);
-        console.error('❌ Error response data:', err.response?.data);
 
         // Si es error 404, el usuario fue eliminado
         if (err.response?.status === 404) {
@@ -90,9 +91,9 @@ export default function AuthLayout() {
           return;
         }
 
-        // Si es error 403, sin permisos (usuario deshabilitado)
+        // Si es error 403, NO cerrar sesión automáticamente (Graceful Handling)
         if (err.response?.status === 403) {
-          handleLogout("No tienes permisos para acceder. Tu cuenta puede haber sido deshabilitada.");
+          console.warn("⛔ Acceso denegado (403) al verificar estado. Manteniendo sesión.");
           return;
         }
 
@@ -101,10 +102,6 @@ export default function AuthLayout() {
           handleLogout("Tu sesión ha expirado. Inicia sesión nuevamente.");
           return;
         }
-
-        // Para otros errores, no cerrar sesión automáticamente
-        // pero mostrar mensaje informativo
-        console.warn('⚠️ Error al verificar estado (no cerrando sesión):', err.response?.data?.error || err.message);
       }
     };
 
@@ -134,30 +131,39 @@ export default function AuthLayout() {
 
     // 👇 NUEVOS EVENTOS: Escuchar cuando otros usuarios son modificados
     const handleUserUpdated = () => {
-      console.log('📢 Evento recibido: userUpdated - verificando mi estado');
       checkUserStatus();
     };
 
     const handleUserDeleted = () => {
-      console.log('📢 Evento recibido: userDeleted - verificando mi estado');
       checkUserStatus();
     };
 
     const handleUserStatusChanged = () => {
-      console.log('📢 Evento recibido: userStatusChanged - verificando mi estado');
       checkUserStatus();
+    };
+
+    // 👇 SOCKET EVENTS: Actualización en tiempo real
+    const handleRoleUpdated = (data) => {
+      const currentStored = localStorage.getItem("user");
+      if (!currentStored) return;
+      const currentUser = JSON.parse(currentStored);
+
+      // Si el rol actualizado es el mío, refrescar permisos
+      // NOTA: El backend envía { id, name, permissions }, por eso usamos data.id
+      // Usamos String() para permitir comparación segura entre string y number
+      if (String(data.id) === String(currentUser.roleId)) {
+        checkUserStatus();
+      }
     };
 
     // 👇 STORAGE EVENTS: Para sincronización entre pestañas/navegadores
     const handleStorageChange = (e) => {
       if (e.key === 'userChanged' && e.newValue !== e.oldValue) {
-        console.log('📢 Storage event: userChanged - verificando mi estado');
         checkUserStatus();
       }
 
       // Si otra pestaña cerró sesión, cerrar esta también
       if (e.key === 'userSessionClosed' && e.newValue !== e.oldValue) {
-        console.log('📢 Storage event: Sesión cerrada en otra pestaña');
         localStorage.removeItem("token");
         localStorage.removeItem("user");
         delete api.defaults.headers.common["Authorization"];
@@ -177,6 +183,11 @@ export default function AuthLayout() {
     window.addEventListener("userStatusChanged", handleUserStatusChanged);
     window.addEventListener("storage", handleStorageChange);
 
+    // Escuchar eventos de socket
+    if (socket) {
+      socket.on('role_updated', handleRoleUpdated);
+    }
+
     // Cleanup
     return () => {
       clearInterval(intervalId);
@@ -184,8 +195,12 @@ export default function AuthLayout() {
       window.removeEventListener("userDeleted", handleUserDeleted);
       window.removeEventListener("userStatusChanged", handleUserStatusChanged);
       window.removeEventListener("storage", handleStorageChange);
+
+      if (socket) {
+        socket.off('role_updated', handleRoleUpdated);
+      }
     };
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, socket]);
 
   return (
     <div className="app">

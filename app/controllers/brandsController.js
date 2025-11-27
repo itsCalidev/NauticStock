@@ -1,7 +1,8 @@
 const Controller = require('./Controller');
-const Brand = require('../models/Brand');
+const Brand = require('../models/brand');
 const History = require('../models/history');
-const Validator = require('../classes/Validator');
+const Validator = require('../classes/validator');
+const socketManager = require('../classes/socketManager');
 
 class BrandsController extends Controller {
     constructor() {
@@ -45,6 +46,10 @@ class BrandsController extends Controller {
 
             const insertId = await this.brandModel.create(brandData.name);
 
+            // Emit socket event
+            socketManager.emit('brand_created', { id: insertId, ...brandData });
+            socketManager.emit('history_updated', {});
+
             await this.historyModel.registerLog({
                 action_type: 'Marca Creada',
                 performed_by: req.user.id,
@@ -76,9 +81,6 @@ class BrandsController extends Controller {
                 return this.sendResponse(res, 400, null, error);
             }
 
-            // Verificar si existe (usando getAll y filtrando por ahora, o implementar findById en modelo)
-            // Mejor implemento findById en el modelo Brand si no existe, pero Model.js tiene findById?
-            // Model.js tiene findById.
             const existingBrand = await this.brandModel.findById(id);
             if (!existingBrand) {
                 return this.sendNotFound(res, 'Marca no encontrada');
@@ -94,6 +96,10 @@ class BrandsController extends Controller {
             };
 
             await this.brandModel.update(id, brandData);
+
+            // Emit socket event
+            socketManager.emit('brand_updated', { id, ...brandData });
+            socketManager.emit('history_updated', {});
 
             await this.historyModel.registerLog({
                 action_type: 'Marca Actualizada',
@@ -124,6 +130,10 @@ class BrandsController extends Controller {
             }
 
             await this.brandModel.deleteBrand(id);
+
+            // Emit socket event
+            socketManager.emit('brand_deleted', { id });
+            socketManager.emit('history_updated', {});
 
             await this.historyModel.registerLog({
                 action_type: 'Marca Eliminada',

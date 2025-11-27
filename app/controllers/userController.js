@@ -1,54 +1,23 @@
-const Controller = require("./Controller");
-const User = require("../models/user");
+const Validator = require("../classes/validator");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const config = require("../config/config");
+const Controller = require("./Controller");
+const User = require("../models/user");
+const Role = require("../models/role");
 const History = require("../models/history");
-const Validator = require("../classes/Validator");
+const socketManager = require("../classes/socketManager");
+
 const historyModel = new History();
 
 class UserController extends Controller {
   constructor() {
     super();
     this.userModel = new User();
+    this.roleModel = new Role();
   }
 
-  // Actualizar mi propia contraseña
-  async updateMyPassword(req, res) {
-    try {
-      const id = req.user.id;
-      const data = req.body;
-      const performed_by = req.user.id;
-
-      const error = Validator.validate(data, {
-        password: { required: true, minLength: 8 }
-      });
-
-      if (error) {
-        return this.sendResponse(res, 400, null, error);
-      }
-
-      const allowedData = { password: data.password };
-
-      const result = await this.userModel.updateUser(id, allowedData);
-
-      await historyModel.registerLog({
-        action_type: "Contraseña Cambiada",
-        performed_by,
-        target_user: id,
-        old_value: null,
-        new_value: null,
-        description: `Usuario ${id} cambió su propia contraseña`
-      });
-
-      return this.sendResponse(res, 200, { updated: result }, "Contraseña actualizada exitosamente");
-    } catch (err) {
-      console.error('Error en updateMyPassword:', err);
-      return this.sendInternalError(res, "Error al actualizar contraseña");
-    }
-  }
-
-  /** Crear usuario */
+  /** Registrar usuario */
   async register(req, res) {
     try {
       const data = req.body;
@@ -57,8 +26,10 @@ class UserController extends Controller {
       const error = Validator.validate(data, {
         name: { required: true },
         email: { required: true, email: true },
-        password: { required: true, minLength: 8 },
-        account: { numeric: true, maxLength: 10 }
+        password: { required: true, minLength: 6 },
+        account: { required: true, numeric: true, maxLength: 10 },
+        ranks: { required: true },
+        roleId: { required: true }
       });
 
       if (error) {
@@ -79,6 +50,10 @@ class UserController extends Controller {
         }
         throw dbErr;
       }
+
+      // Emit socket event
+      socketManager.emit("user_created", { id, ...data });
+      socketManager.emit("history_updated", {});
 
       await historyModel.registerLog({
         action_type: "Usuario Creado",
@@ -121,6 +96,13 @@ class UserController extends Controller {
       }
 
       const result = await this.userModel.updateUser(id, data);
+
+      // Emit socket event
+      socketManager.emit("user_updated", { id, ...data });
+      if ("status" in data) {
+        socketManager.emit("user_status_changed", { id, status: data.status });
+      }
+      socketManager.emit("history_updated", {});
 
       let action_type = "Usuario Actualizado";
       let description = `Actualizó datos de usuario ${id}`;
@@ -181,6 +163,40 @@ class UserController extends Controller {
     }
   }
 
+  /** Actualizar mi propia contraseña */
+  async updateMyPassword(req, res) {
+    try {
+      const id = req.user.id;
+      const { password } = req.body;
+
+      if (!password) {
+        return this.sendResponse(res, 400, null, "La contraseña es requerida");
+      }
+
+      if (password.length < 6) {
+        return this.sendResponse(res, 400, null, "La contraseña debe tener al menos 6 caracteres");
+      }
+
+      // Reutilizamos la lógica de update, pero restringida a solo password
+      const result = await this.userModel.updateUser(id, { password });
+
+      // Log history
+      await historyModel.registerLog({
+        action_type: "Contraseña Cambiada",
+        performed_by: id,
+        target_user: id,
+        old_value: null,
+        new_value: null, // No guardamos la contraseña en logs por seguridad
+        description: `Usuario ${id} cambió su propia contraseña`
+      });
+
+      return this.sendResponse(res, 200, { updated: true }, "Contraseña actualizada exitosamente");
+    } catch (err) {
+      console.error('Error en updateMyPassword:', err);
+      return this.sendInternalError(res, "Error al actualizar contraseña");
+    }
+  }
+
   /** Eliminar usuario */
   async delete(req, res) {
     try {
@@ -211,6 +227,10 @@ class UserController extends Controller {
       });
 
       const result = await this.userModel.deleteUser(id);
+
+      // Emit socket event
+      socketManager.emit("user_deleted", { id });
+      socketManager.emit("history_updated", {});
 
       return this.sendResponse(res, 200, { deleted: result }, "Usuario eliminado exitosamente");
 
@@ -253,7 +273,15 @@ class UserController extends Controller {
         return this.sendNotFound(res, "Usuario no encontrado");
       }
 
+      const permissions = await this.userModel.getPermissions(user.roleId);
+      console.log('🔍 Backend getById - User ID:', id);
+      console.log('🔍 Backend getById - Role ID:', user.roleId);
+      console.log('🔍 Backend getById - Permissions fetched:', permissions);
+
+      user.permissions = permissions;
+
       const { password, ...userWithoutPassword } = user;
+      console.log('🔍 Backend getById - Sending user object keys:', Object.keys(userWithoutPassword));
 
       return this.sendResponse(res, 200, userWithoutPassword);
 
@@ -284,6 +312,9 @@ class UserController extends Controller {
     const payload = { id: user.id, name: user.name, roleId: user.roleId };
     const token = jwt.sign(payload, config.jwtSecret, config.jwtOptions);
 
+    // Obtener permisos del rol
+    const permissions = await this.userModel.getPermissions(user.roleId);
+
     return {
       token,
       user: {
@@ -294,6 +325,7 @@ class UserController extends Controller {
         ranks: user.ranks,
         roleId: user.roleId,
         profile_pic: user.profile_pic,
+        permissions: permissions // 👈 Incluir permisos
       },
     };
   }

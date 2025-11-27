@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
     Box,
     Button,
@@ -30,6 +31,9 @@ import AppSnackbar from "../../components/AppSnackbar";
 import SearchHighlighter from "../../components/SearchHighlighter";
 import { useSearch } from "../../contexts/SearchContext";
 import api from "../../api/axiosClient";
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { flexibleMatch } from "../../utils/searchUtils";
 
 export default function Ranks() {
     const theme = useTheme();
@@ -45,6 +49,9 @@ export default function Ranks() {
         severity: "success",
     });
 
+    const socket = useSocket();
+    const { can } = usePermission();
+
     // Estado para diálogo de eliminación
     const [deleteDialog, setDeleteDialog] = useState({
         open: false,
@@ -54,6 +61,13 @@ export default function Ranks() {
 
     // Contexto de búsqueda
     const { searchTerm, isSearching } = useSearch();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        if (!can('rank_read')) {
+            navigate('/');
+        }
+    }, [can, navigate]);
 
     // Filtro de rangos con búsqueda
     const filteredRanks = useMemo(() => {
@@ -64,10 +78,8 @@ export default function Ranks() {
         }
 
         return ranks.filter((rank) => {
-            const searchLower = searchTerm.toLowerCase();
-            return (
-                rank.name?.toLowerCase().includes(searchLower)
-            );
+            const searchableText = `${rank.name}`;
+            return flexibleMatch(searchableText, searchTerm);
         });
     }, [ranks, isSearching, searchTerm]);
 
@@ -91,34 +103,29 @@ export default function Ranks() {
         }
     }, []);
 
-    const POLL_INTERVAL = 5000;
-
     useEffect(() => {
         fetchRanks();
-        const intervalId = setInterval(() => fetchRanks({ silent: true }), POLL_INTERVAL);
-        return () => clearInterval(intervalId);
     }, [fetchRanks]);
 
-    // Escuchar eventos de otras ventanas/pestañas
+    // Escuchar eventos de Socket.io
     useEffect(() => {
-        const handleReload = () => fetchRanks({ silent: true });
+        if (!socket) return;
 
-        window.addEventListener("rankCreated", handleReload);
-        window.addEventListener("rankUpdated", handleReload);
-        window.addEventListener("rankDeleted", handleReload);
-
-        const handleStorageChange = (e) => {
-            if (e.key === 'rankChanged') handleReload();
+        const handleRankUpdate = (data) => {
+            console.log('🔔 Rank update received:', data);
+            fetchRanks({ silent: true });
         };
-        window.addEventListener("storage", handleStorageChange);
+
+        socket.on('rank_created', handleRankUpdate);
+        socket.on('rank_updated', handleRankUpdate);
+        socket.on('rank_deleted', handleRankUpdate);
 
         return () => {
-            window.removeEventListener("rankCreated", handleReload);
-            window.removeEventListener("rankUpdated", handleReload);
-            window.removeEventListener("rankDeleted", handleReload);
-            window.removeEventListener("storage", handleStorageChange);
+            socket.off('rank_created', handleRankUpdate);
+            socket.off('rank_updated', handleRankUpdate);
+            socket.off('rank_deleted', handleRankUpdate);
         };
-    }, [fetchRanks]);
+    }, [socket, fetchRanks]);
 
     const handleOpen = (rank = null) => {
         if (rank) {
@@ -147,17 +154,13 @@ export default function Ranks() {
             if (editingRank) {
                 await api.put(`/api/ranks/${editingRank.id}`, formData);
                 showSnackbar("Rango actualizado exitosamente");
-                window.dispatchEvent(new Event("rankUpdated"));
-                localStorage.setItem('rankChanged', Date.now().toString());
             } else {
                 await api.post("/api/ranks", formData);
                 showSnackbar("Rango creado exitosamente");
-                window.dispatchEvent(new Event("rankCreated"));
-                localStorage.setItem('rankChanged', Date.now().toString());
             }
 
             handleClose();
-            fetchRanks();
+            // fetchRanks(); // Socket will handle update
         } catch (error) {
             const message = error.response?.data?.error || "Error al procesar la solicitud";
             showSnackbar(message, "error");
@@ -176,9 +179,7 @@ export default function Ranks() {
         try {
             await api.delete(`/api/ranks/${deleteDialog.rankId}`);
             showSnackbar("Rango eliminado exitosamente");
-            window.dispatchEvent(new Event("rankDeleted"));
-            localStorage.setItem('rankChanged', Date.now().toString());
-            fetchRanks();
+            // fetchRanks(); // Socket will handle update
         } catch (error) {
             const message = error.response?.data?.error || "Error al eliminar el rango";
             showSnackbar(message, "error");
@@ -202,7 +203,7 @@ export default function Ranks() {
         });
     };
 
-    if (loading) {
+    if (loading && !ranks.length) {
         return (
             <Box m="20px">
                 <Header title="Rangos" subtitle="Cargando..." />
@@ -214,19 +215,21 @@ export default function Ranks() {
         <Box m="20px">
             <Header
                 title="Gestión de Rangos"
-                subtitle={`${ranks.length} rangos | ${filteredRanks.length} mostrados`}
+                subtitle={`${ranks.length} rangos | ${filteredRanks.length} mostradas`}
             />
 
             <Box display="flex" justifyContent="flex-end" alignItems="center" mb="20px">
-                <Button
-                    variant="contained"
-                    color="secondary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpen()}
-                    sx={{ px: 3, py: 1.5 }}
-                >
-                    Nuevo Rango
-                </Button>
+                {can('rank_create') && (
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        startIcon={<AddIcon />}
+                        onClick={() => handleOpen()}
+                        sx={{ px: 3, py: 1.5 }}
+                    >
+                        Nuevo Rango
+                    </Button>
+                )}
             </Box>
 
             <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
@@ -290,21 +293,25 @@ export default function Ranks() {
                                     </Typography>
                                 </TableCell>
                                 <TableCell align="center">
-                                    <IconButton
-                                        onClick={() => handleOpen(rank)}
-                                        color="warning"
-                                        size="small"
-                                        sx={{ mr: 1 }}
-                                    >
-                                        <EditIcon />
-                                    </IconButton>
-                                    <IconButton
-                                        onClick={() => handleDelete(rank.id, rank.name)}
-                                        color="error"
-                                        size="small"
-                                    >
-                                        <DeleteIcon />
-                                    </IconButton>
+                                    {can('rank_update') && (
+                                        <IconButton
+                                            onClick={() => handleOpen(rank)}
+                                            color="warning"
+                                            size="small"
+                                            sx={{ mr: 1 }}
+                                        >
+                                            <EditIcon />
+                                        </IconButton>
+                                    )}
+                                    {can('rank_delete') && (
+                                        <IconButton
+                                            onClick={() => handleDelete(rank.id, rank.name)}
+                                            color="error"
+                                            size="small"
+                                        >
+                                            <DeleteIcon />
+                                        </IconButton>
+                                    )}
                                 </TableCell>
                             </TableRow>
                         ))}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Button,
@@ -26,7 +27,8 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Block as BlockIcon,
-  CheckCircle as CheckCircleIcon
+  CheckCircle as CheckCircleIcon,
+  FileDownload as FileDownloadIcon
 } from "@mui/icons-material";
 import Header from "../../components/Header";
 import { Token } from "../../theme";
@@ -34,6 +36,10 @@ import AppSnackbar from "../../components/AppSnackbar";
 import SearchHighlighter from "../../components/SearchHighlighter";
 import { useSearch } from "../../contexts/SearchContext";
 import api from "../../api/axiosClient";
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { flexibleMatch } from "../../utils/searchUtils";
+import { exportToExcel } from "../../utils/exportUtils";
 
 export default function Providers() {
   const theme = useTheme();
@@ -43,6 +49,19 @@ export default function Providers() {
   const [open, setOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState(null);
   const [showInactive, setShowInactive] = useState(true);
+
+  const [deleteDialog, setDeleteDialog] = useState({
+    open: false,
+    providerId: null,
+    providerName: ''
+  });
+
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success"
+  });
+
   const [formData, setFormData] = useState({
     name: "",
     company: "",
@@ -51,23 +70,20 @@ export default function Providers() {
     registration: "",
     phone: "",
     website: "",
-    contact_name: ""
-  });
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: "",
-    severity: "success",
-  });
-
-  // Estado para diálogo de eliminación
-  const [deleteDialog, setDeleteDialog] = useState({
-    open: false,
-    providerId: null,
     providerName: ''
   });
 
   // Contexto de búsqueda
   const { searchTerm, isSearching } = useSearch();
+  const { can } = usePermission();
+  const socket = useSocket();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!can('provider_read')) {
+      navigate('/');
+    }
+  }, [can, navigate]);
 
   const showSnackbar = (message, severity = "success") => {
     setSnackbar({ open: true, message, severity });
@@ -90,36 +106,31 @@ export default function Providers() {
     }
   }, []);
 
-  const POLL_INTERVAL = 5000;
-
   useEffect(() => {
     fetchProviders();
-    const intervalId = setInterval(() => fetchProviders({ silent: true }), POLL_INTERVAL);
-    return () => clearInterval(intervalId);
   }, [fetchProviders]);
 
-  // Escuchar eventos de otras ventanas/pestañas
+  // Escuchar eventos de Socket.io
   useEffect(() => {
-    const handleReload = () => fetchProviders({ silent: true });
+    if (!socket) return;
 
-    window.addEventListener("providerCreated", handleReload);
-    window.addEventListener("providerUpdated", handleReload);
-    window.addEventListener("providerDeleted", handleReload);
-    window.addEventListener("providerStatusChanged", handleReload);
-
-    const handleStorageChange = (e) => {
-      if (e.key === 'providerChanged') handleReload();
+    const handleProviderUpdate = (data) => {
+      console.log('🔔 Provider update received:', data);
+      fetchProviders({ silent: true });
     };
-    window.addEventListener("storage", handleStorageChange);
+
+    socket.on('provider_created', handleProviderUpdate);
+    socket.on('provider_updated', handleProviderUpdate);
+    socket.on('provider_deleted', handleProviderUpdate);
+    socket.on('provider_status_changed', handleProviderUpdate);
 
     return () => {
-      window.removeEventListener("providerCreated", handleReload);
-      window.removeEventListener("providerUpdated", handleReload);
-      window.removeEventListener("providerDeleted", handleReload);
-      window.removeEventListener("providerStatusChanged", handleReload);
-      window.removeEventListener("storage", handleStorageChange);
+      socket.off('provider_created', handleProviderUpdate);
+      socket.off('provider_updated', handleProviderUpdate);
+      socket.off('provider_deleted', handleProviderUpdate);
+      socket.off('provider_status_changed', handleProviderUpdate);
     };
-  }, [fetchProviders]);
+  }, [socket, fetchProviders]);
 
   // Filtro de proveedores con búsqueda y estado
   const filteredProviders = useMemo(() => {
@@ -128,16 +139,9 @@ export default function Providers() {
     let filtered = showInactive ? providers : providers.filter(p => p.status === 0);
 
     if (isSearching && searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
       filtered = filtered.filter((provider) => {
-        return (
-          provider.name?.toLowerCase().includes(searchLower) ||
-          provider.company?.toLowerCase().includes(searchLower) ||
-          provider.email?.toLowerCase().includes(searchLower) ||
-          provider.contact_name?.toLowerCase().includes(searchLower) ||
-          provider.phone?.toLowerCase().includes(searchLower) ||
-          provider.registration?.toLowerCase().includes(searchLower)
-        );
+        const searchableText = `${provider.name} ${provider.company} ${provider.email} ${provider.contact_name} ${provider.phone} ${provider.registration}`;
+        return flexibleMatch(searchableText, searchTerm);
       });
     }
     return filtered;
@@ -213,17 +217,13 @@ export default function Providers() {
       if (editingProvider) {
         await api.put(`/api/providers/${editingProvider.id}`, dataToSubmit);
         showSnackbar("Proveedor actualizado exitosamente");
-        window.dispatchEvent(new Event("providerUpdated"));
-        localStorage.setItem('providerChanged', Date.now().toString());
       } else {
         await api.post("/api/providers", dataToSubmit);
         showSnackbar("Proveedor creado exitosamente");
-        window.dispatchEvent(new Event("providerCreated"));
-        localStorage.setItem('providerChanged', Date.now().toString());
       }
 
       handleClose();
-      fetchProviders();
+      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al procesar la solicitud";
       showSnackbar(message, "error");
@@ -242,9 +242,7 @@ export default function Providers() {
     try {
       await api.delete(`/api/providers/${deleteDialog.providerId}`);
       showSnackbar("Proveedor eliminado exitosamente");
-      window.dispatchEvent(new Event("providerDeleted"));
-      localStorage.setItem('providerChanged', Date.now().toString());
-      fetchProviders();
+      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al eliminar el proveedor";
       showSnackbar(message, "error");
@@ -262,9 +260,7 @@ export default function Providers() {
       await api.put(`/api/providers/${id}/status`);
       const action = currentStatus === 0 ? "deshabilitado" : "habilitado";
       showSnackbar(`Proveedor ${name} ${action} exitosamente`);
-      window.dispatchEvent(new Event("providerStatusChanged"));
-      localStorage.setItem('providerChanged', Date.now().toString());
-      fetchProviders();
+      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al cambiar estado";
       showSnackbar(message, "error");
@@ -298,45 +294,65 @@ export default function Providers() {
           </Button>
           <Typography variant="body2" color="text.secondary">
             {showInactive
-              ? `${providers.length} proveedores (${providers.filter(p => p.status === 0).length} activos, ${providers.filter(p => p.status === 1).length} inactivos)`
+              ? `${providers.length} proveedores (${providers.filter(p => p.status === 0).length} activos)`
               : `${filteredProviders.length} proveedores activos`
             }
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          color="secondary"
-          startIcon={<AddIcon />}
-          onClick={() => handleOpen()}
-          sx={{ px: 3, py: 1.5 }}
-        >
-          Nuevo Proveedor
-        </Button>
+
+        <Box display="flex" gap={2}>
+          <Button
+            variant="contained"
+            color="success"
+            startIcon={<FileDownloadIcon />}
+            onClick={() => exportToExcel(filteredProviders.map(p => ({
+              Nombre: p.name,
+              Empresa: p.company,
+              Email: p.email,
+              Teléfono: p.phone,
+              Contacto: p.contact_name,
+              RFC: p.registration,
+              Estado: p.status === 0 ? 'Activo' : 'Inactivo'
+            })), 'Proveedores')}
+            sx={{ fontWeight: 'bold' }}
+          >
+            Exportar Excel
+          </Button>
+          {can('provider_create') && (
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpen()}
+            >
+              Nuevo Proveedor
+            </Button>
+          )}
+        </Box>
       </Box>
 
-      <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400], mt: "40px" }}>
+      <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
         <Table>
           <TableHead sx={{ backgroundColor: colors.blueAccent[700] }}>
             <TableRow>
-              <TableCell><Typography fontWeight="bold">Nombre</Typography></TableCell>
-              <TableCell><Typography fontWeight="bold">Empresa</Typography></TableCell>
-              <TableCell><Typography fontWeight="bold">Email</Typography></TableCell>
-              <TableCell><Typography fontWeight="bold">Teléfono</Typography></TableCell>
-              <TableCell><Typography fontWeight="bold">Registro/RFC</Typography></TableCell>
-              <TableCell><Typography fontWeight="bold">Sitio Web</Typography></TableCell>
-              <TableCell><Typography fontWeight="bold">Contacto</Typography></TableCell>
-              <TableCell align="center"><Typography fontWeight="bold">Estado</Typography></TableCell>
-              <TableCell align="center"><Typography fontWeight="bold">Acciones</Typography></TableCell>
+              <TableCell>Nombre</TableCell>
+              <TableCell>Empresa</TableCell>
+              <TableCell>Email</TableCell>
+              <TableCell>Teléfono</TableCell>
+              <TableCell>Contacto</TableCell>
+              <TableCell>RFC</TableCell>
+              <TableCell align="center">Estado</TableCell>
+              <TableCell align="center">Acciones</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredProviders.map((row) => {
-              const isActive = row.status === 0;
+            {filteredProviders.map((provider) => {
+              const isActive = provider.status === 0;
               return (
-                <TableRow key={row.id} hover>
+                <TableRow key={provider.id} hover>
                   <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center', height: '100%', fontWeight: 'bold', opacity: isActive ? 1 : 0.5 }}>
-                      <SearchHighlighter text={row.name} searchTerm={searchTerm} />
+                    <Box sx={{ display: 'flex', alignItems: 'center', opacity: isActive ? 1 : 0.5 }}>
+                      <SearchHighlighter text={provider.name} searchTerm={searchTerm} />
                       {!isActive && (
                         <Box component="span" sx={{ ml: 1, px: 1, py: 0.2, bgcolor: 'error.main', color: 'white', borderRadius: 1, fontSize: '0.7rem' }}>
                           INACTIVO
@@ -344,58 +360,51 @@ export default function Providers() {
                       )}
                     </Box>
                   </TableCell>
-                  <TableCell>
-                    <Box sx={{ opacity: isActive ? 1 : 0.5 }}>
-                      <SearchHighlighter text={row.company || '-'} searchTerm={searchTerm} />
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ opacity: isActive ? 1 : 0.5 }}>
-                      <SearchHighlighter text={row.email || '-'} searchTerm={searchTerm} />
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ opacity: isActive ? 1 : 0.5 }}>
-                      <SearchHighlighter text={row.phone || '-'} searchTerm={searchTerm} />
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ opacity: isActive ? 1 : 0.5 }}>
-                      <SearchHighlighter text={row.registration || '-'} searchTerm={searchTerm} />
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ opacity: isActive ? 1 : 0.5 }}>
-                      {row.website ? (
-                        <a href={row.website.startsWith('http') ? row.website : `http://${row.website}`} target="_blank" rel="noopener noreferrer" style={{ color: colors.greenAccent[500], textDecoration: 'underline' }}>
-                          <SearchHighlighter text={row.website} searchTerm={searchTerm} />
-                        </a>
-                      ) : '-'}
-                    </Box>
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ opacity: isActive ? 1 : 0.5 }}>
-                      <SearchHighlighter text={row.contact_name || '-'} searchTerm={searchTerm} />
-                    </Box>
-                  </TableCell>
+                  <TableCell><SearchHighlighter text={provider.company} searchTerm={searchTerm} /></TableCell>
+                  <TableCell><SearchHighlighter text={provider.email} searchTerm={searchTerm} /></TableCell>
+                  <TableCell><SearchHighlighter text={provider.phone} searchTerm={searchTerm} /></TableCell>
+                  <TableCell><SearchHighlighter text={provider.contact_name} searchTerm={searchTerm} /></TableCell>
+                  <TableCell><SearchHighlighter text={provider.registration} searchTerm={searchTerm} /></TableCell>
                   <TableCell align="center">
                     <Chip
                       label={isActive ? "Activo" : "Inactivo"}
-                      color={isActive ? "success" : "default"}
+                      color={isActive ? "success" : "error"}
                       size="small"
+                      variant="outlined"
                     />
                   </TableCell>
                   <TableCell align="center">
-                    <Box>
-                      <IconButton onClick={() => handleOpen(row)} color="warning" size="small" title="Editar" disabled={!isActive}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton onClick={() => handleToggleStatus(row.id, row.status, row.name)} color={isActive ? "default" : "success"} size="small" title={isActive ? "Deshabilitar" : "Habilitar"}>
-                        {isActive ? <BlockIcon /> : <CheckCircleIcon />}
-                      </IconButton>
-                      <IconButton onClick={() => handleDelete(row.id, row.name)} color="error" size="small" title="Eliminar">
-                        <DeleteIcon />
-                      </IconButton>
+                    <Box display="flex" justifyContent="center" gap={1}>
+                      {can('provider_update') && (
+                        <IconButton
+                          color="warning"
+                          size="small"
+                          onClick={() => handleOpen(provider)}
+                          disabled={!isActive}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      )}
+
+                      {can('provider_update') && (
+                        <IconButton
+                          color={isActive ? "error" : "success"}
+                          size="small"
+                          onClick={() => handleToggleStatus(provider.id, provider.status, provider.name)}
+                        >
+                          {isActive ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
+                        </IconButton>
+                      )}
+
+                      {can('provider_delete') && isActive && (
+                        <IconButton
+                          color="error"
+                          size="small"
+                          onClick={() => handleDelete(provider.id, provider.name)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      )}
                     </Box>
                   </TableCell>
                 </TableRow>

@@ -1,11 +1,12 @@
 const Controller = require("./Controller");
 const Products = require("../models/products");
 const History = require("../models/history");
-const Brand = require("../models/Brand");
+const Brand = require("../models/brand");
 const Category = require("../models/category");
 const Location = require("../models/location");
-const Provider = require("../models/Provider");
-const Validator = require("../classes/Validator");
+const Provider = require("../models/provider");
+const Validator = require("../classes/validator");
+const socketManager = require("../classes/socketManager");
 
 class ProductsController extends Controller {
   constructor() {
@@ -129,6 +130,10 @@ class ProductsController extends Controller {
 
       const productId = await this.productsModel.createProduct(data);
 
+      // Emit socket event
+      socketManager.emit("product_created", { id: productId, ...data });
+      socketManager.emit("history_updated", {});
+
       try {
         await this.historyModel.registerLog({
           action_type: "Producto Creado",
@@ -166,6 +171,11 @@ class ProductsController extends Controller {
       const data = await this.resolveIds(rawData);
 
       await this.productsModel.updateProduct(id, data);
+
+      // Emit socket event with FULL data for notifications
+      const updatedProductPayload = { ...oldProduct, ...data, id };
+      socketManager.emit("product_updated", updatedProductPayload);
+      socketManager.emit("history_updated", {});
 
       try {
         await this.historyModel.registerLog({
@@ -214,6 +224,10 @@ class ProductsController extends Controller {
       }
 
       await this.productsModel.deleteProduct(id);
+
+      // Emit socket event
+      socketManager.emit("product_deleted", { id });
+      socketManager.emit("history_updated", {});
 
       return this.sendResponse(res, 200, null, "Producto eliminado exitosamente");
     } catch (error) {

@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../api/axiosClient";
 import {
   Box,
@@ -28,6 +28,7 @@ import {
   TableHead,
   TableRow
 } from "@mui/material";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -40,8 +41,10 @@ import SearchHighlighter from '../../components/SearchHighlighter';
 import AppSnackbar from "../../components/AppSnackbar";
 import { Formik } from "formik";
 import * as yup from "yup";
-
-const POLL_INTERVAL = 5000; // cada 5 segundos
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { flexibleMatch } from "../../utils/searchUtils";
+import { exportToExcel } from "../../utils/exportUtils";
 
 const userSchema = yup.object().shape({
   name: yup.string().required("Requerido"),
@@ -66,7 +69,7 @@ export default function Team() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { can } = usePermission();
 
   // Estados para el diálogo de creación/edición
   const [openDialog, setOpenDialog] = useState(false);
@@ -79,6 +82,7 @@ export default function Team() {
     message: "",
     severity: "success",
   });
+  const socket = useSocket();
 
   // Estado para diálogo de eliminación
   const [deleteDialog, setDeleteDialog] = useState({
@@ -92,6 +96,13 @@ export default function Team() {
 
   // Contexto de búsqueda
   const { searchTerm, isSearching } = useSearch();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAuthenticated && !can('user_read')) {
+      navigate('/');
+    }
+  }, [isAuthenticated, can, navigate]);
 
   // Cargar rangos
   useEffect(() => {
@@ -113,21 +124,9 @@ export default function Team() {
 
     // Aplicar filtro de búsqueda con validaciones ultra seguras
     if (isSearching && searchTerm && searchTerm.trim() !== '') {
-      const searchLower = searchTerm.toLowerCase();
-
       filtered = filtered.filter(user => {
-        // Función helper para verificar si un campo contiene el término
-        const contains = (field) => {
-          return field &&
-            typeof field === 'string' &&
-            field.toLowerCase().includes(searchLower);
-        };
-
-        return contains(user.name) ||
-          contains(user.email) ||
-          contains(user.matricula) ||
-          contains(user.grado) ||
-          contains(user.access);
+        const searchableText = `${user.name} ${user.email} ${user.matricula} ${user.grado} ${user.access}`;
+        return flexibleMatch(searchableText, searchTerm);
       });
     }
 
@@ -163,15 +162,7 @@ export default function Team() {
         return;
       }
 
-      // Verificar si es admin (roleId === 1)
-      if (user.roleId !== 1) {
-        setError("No tienes permisos para ver el equipo (solo administradores)");
-        setLoading(false);
-        return;
-      }
-
       setIsAuthenticated(true);
-      setIsAdmin(true);
     };
 
     // Verificar inmediatamente
@@ -184,8 +175,8 @@ export default function Team() {
   }, []);
 
   const fetchUsers = useCallback(async ({ silent = false } = {}) => {
-    if (!isAuthenticated || !isAdmin) {
-      console.log('Team: No autenticado o no es admin, saltando fetchUsers');
+    if (!isAuthenticated) {
+      console.log('Team: No autenticado, saltando fetchUsers');
       return;
     }
 
@@ -228,19 +219,39 @@ export default function Team() {
         setLoading(false);
       }
     }
-  }, [isAuthenticated, isAdmin]);
+  }, [isAuthenticated]);
 
-  // Ejecutar fetchUsers solo cuando esté autenticado y sea admin
+  // Ejecutar fetchUsers solo cuando esté autenticado
   useEffect(() => {
-    if (isAuthenticated && isAdmin) {
+    if (isAuthenticated) {
       fetchUsers();
-      const intervalId = setInterval(() => fetchUsers({ silent: true }), POLL_INTERVAL);
-      return () => clearInterval(intervalId);
     }
-  }, [fetchUsers, isAuthenticated, isAdmin]);
+  }, [fetchUsers, isAuthenticated]);
+
+  // Escuchar eventos de Socket.io
+  useEffect(() => {
+    if (!socket || !isAuthenticated) return;
+
+    const handleUserUpdate = (data) => {
+      console.log('🔔 User update received:', data);
+      fetchUsers({ silent: true });
+    };
+
+    socket.on('user_created', handleUserUpdate);
+    socket.on('user_updated', handleUserUpdate);
+    socket.on('user_deleted', handleUserUpdate);
+    socket.on('user_status_changed', handleUserUpdate);
+
+    return () => {
+      socket.off('user_created', handleUserUpdate);
+      socket.off('user_updated', handleUserUpdate);
+      socket.off('user_deleted', handleUserUpdate);
+      socket.off('user_status_changed', handleUserUpdate);
+    };
+  }, [socket, fetchUsers, isAuthenticated]);
 
   const handleToggleStatus = useCallback(async (id, current) => {
-    if (!isAdmin) {
+    if (!can('user_update')) {
       setError("No tienes permisos para modificar usuarios");
       return;
     }
@@ -250,13 +261,7 @@ export default function Team() {
       console.log(`${newStatus === 0 ? 'Rehabilitando' : 'Deshabilitando'} usuario ${id}`);
 
       await api.put(`/api/users/${id}`, { status: newStatus });
-
-      // 👇 NUEVO: Disparar eventos para sincronización
-      window.dispatchEvent(new Event("userStatusChanged"));
-      window.dispatchEvent(new Event("userUpdated"));
-      localStorage.setItem('userChanged', Date.now().toString());
-
-      fetchUsers({ silent: true });
+      // fetchUsers({ silent: true }); // Socket will handle update
 
       console.log(`Usuario ${newStatus === 0 ? 'rehabilitado' : 'deshabilitado'} exitosamente`);
     } catch (err) {
@@ -264,7 +269,7 @@ export default function Team() {
       const errorMessage = err.response?.data?.error || err.message || 'Error desconocido';
       setError('Error al cambiar estado: ' + errorMessage);
     }
-  }, [isAdmin, fetchUsers]);
+  }, [can]);
 
   const handleOpenDialog = (user = null) => {
     setEditingUser(user);
@@ -296,8 +301,7 @@ export default function Team() {
 
       handleCloseDialog();
       resetForm();
-      fetchUsers();
-      window.dispatchEvent(new Event(editingUser ? "userUpdated" : "userCreated"));
+      // fetchUsers(); // Socket will handle update
 
     } catch (err) {
       console.error('Error guardando usuario:', err);
@@ -317,18 +321,14 @@ export default function Team() {
 
       console.log('✅ Usuario eliminado exitosamente');
 
-      // 👇 NUEVO: Disparar eventos para sincronización
-      window.dispatchEvent(new Event("userDeleted"));
-      localStorage.setItem('userChanged', Date.now().toString());
-
       setDeleteDialog({ open: false, userId: null, userName: '' });
-      fetchUsers({ silent: true }); // Recargar lista
+      // fetchUsers({ silent: true }); // Socket will handle update
 
     } catch (err) {
       console.error('Error al eliminar usuario:', err);
       setError('Error al eliminar usuario: ' + (err.response?.data?.error || err.message));
     }
-  }, [deleteDialog, fetchUsers]);
+  }, [deleteDialog]);
 
   // Pantalla de carga inicial
   if (loading && !isAuthenticated) {
@@ -378,8 +378,28 @@ export default function Team() {
           </Typography>
         </Box>
 
+      </Box>
+
+      <Box display="flex" gap={2}>
+        <Button
+          variant="contained"
+          color="success"
+          startIcon={<FileDownloadIcon />}
+          onClick={() => exportToExcel(filteredUsers.map(u => ({
+            Nombre: u.name,
+            Email: u.email,
+            Matrícula: u.matricula,
+            Grado: u.grado,
+            Acceso: u.access,
+            Estado: u.status === 0 ? 'Activo' : 'Inactivo',
+            'Último Acceso': u.lastAccess ? new Date(u.lastAccess).toLocaleString() : 'Nunca'
+          })), 'Equipo_Usuarios')}
+          sx={{ fontWeight: 'bold' }}
+        >
+          Exportar Excel
+        </Button>
         {/* Botón Crear Usuario */}
-        {isAdmin && (
+        {can('user_create') && (
           <Button
             variant="contained"
             color="secondary"
@@ -396,11 +416,14 @@ export default function Team() {
         )}
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
+
+      {
+        error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )
+      }
 
       <TableContainer component={Paper} sx={{ backgroundColor: safeColors.primary[400], mt: "40px" }}>
         <Table>
@@ -458,19 +481,23 @@ export default function Team() {
                     <Box display="flex" justifyContent="center" gap={1}>
                       <Tooltip title={isActive ? "Editar usuario" : "No se puede editar un usuario inactivo"}>
                         <span>
-                          <IconButton size="small" color="warning" onClick={() => handleOpenDialog(row)} disabled={!isAdmin || !isActive}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
+                          {can('user_update') && (
+                            <IconButton size="small" color="warning" onClick={() => handleOpenDialog(row)} disabled={!isActive}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          )}
                         </span>
                       </Tooltip>
                       <Tooltip title={isActive ? "Deshabilitar usuario" : "Rehabilitar usuario"}>
                         <span>
-                          <IconButton size="small" color={isActive ? "error" : "success"} onClick={() => handleToggleStatus(row.id, row.status)} disabled={!isAdmin}>
-                            {isActive ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
-                          </IconButton>
+                          {can('user_update') && (
+                            <IconButton size="small" color={isActive ? "error" : "success"} onClick={() => handleToggleStatus(row.id, row.status)}>
+                              {isActive ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
+                            </IconButton>
+                          )}
                         </span>
                       </Tooltip>
-                      {isAdmin && isActive && (
+                      {can('user_delete') && isActive && (
                         <Tooltip title="Eliminar usuario">
                           <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, userId: row.id, userName: row.name })}>
                             <DeleteIcon fontSize="small" />
@@ -645,6 +672,6 @@ export default function Team() {
         severity={snackbar.severity}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
       />
-    </Box>
+    </Box >
   );
 }

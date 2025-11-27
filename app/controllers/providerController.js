@@ -1,7 +1,8 @@
 const Controller = require('./Controller');
-const Provider = require('../models/Provider');
+const Provider = require('../models/provider');
 const History = require('../models/history');
-const Validator = require('../classes/Validator');
+const Validator = require('../classes/validator');
+const socketManager = require('../classes/socketManager');
 
 class ProviderController extends Controller {
     constructor() {
@@ -53,6 +54,10 @@ class ProviderController extends Controller {
             };
 
             const insertId = await this.providerModel.create(providerData);
+
+            // Emit socket event
+            socketManager.emit('provider_created', { id: insertId, ...providerData });
+            socketManager.emit('history_updated', {});
 
             await this.historyModel.registerLog({
                 action_type: 'Proveedor Creado',
@@ -108,6 +113,10 @@ class ProviderController extends Controller {
 
             await this.providerModel.update(id, providerData);
 
+            // Emit socket event
+            socketManager.emit('provider_updated', { id, ...providerData });
+            socketManager.emit('history_updated', {});
+
             await this.historyModel.registerLog({
                 action_type: 'Proveedor Actualizado',
                 performed_by: req.user.id,
@@ -137,6 +146,10 @@ class ProviderController extends Controller {
             }
 
             await this.providerModel.deleteProvider(id);
+
+            // Emit socket event
+            socketManager.emit('provider_deleted', { id });
+            socketManager.emit('history_updated', {});
 
             await this.historyModel.registerLog({
                 action_type: 'Proveedor Eliminado',
@@ -169,6 +182,10 @@ class ProviderController extends Controller {
 
             const newStatus = existingProvider.status === 0 ? 1 : 0;
             const action = newStatus === 0 ? 'Habilitó' : 'Deshabilitó';
+
+            // Emit socket event
+            socketManager.emit('provider_status_changed', { id, status: newStatus });
+            socketManager.emit('history_updated', {});
 
             await this.historyModel.registerLog({
                 action_type: 'Estado Proveedor Actualizado',

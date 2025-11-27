@@ -8,24 +8,34 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, CartesianGrid
 } from "recharts";
-
-const POLL_INTERVAL = 5000; // 5 segundos
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { useSearch } from "../../contexts/SearchContext";
+import SearchHighlighter from "../../components/SearchHighlighter";
+import { flexibleMatch } from "../../utils/searchUtils";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
+  const { can } = usePermission();
 
   const [historyData, setHistoryData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   // Estados para gráficas
   const [inventoryData, setInventoryData] = useState([]);
   const [activityData, setActivityData] = useState([]);
   const [summaryData, setSummaryData] = useState({});
   const [chartsLoading, setChartsLoading] = useState(true);
+  const socket = useSocket();
+  const { searchTerm } = useSearch();
+
+  const filteredHistory = historyData.filter(log => {
+    const searchableText = `${log.fecha} ${log.accion} ${log.quien} ${log.descripcion}`;
+    return flexibleMatch(searchableText, searchTerm);
+  });
 
   // Colores adaptativos para gráficas
   const chartColors = isDarkMode
@@ -54,7 +64,7 @@ const Dashboard = () => {
     try {
       if (!silent) setChartsLoading(true);
 
-      console.log(`📊 Cargando datos del dashboard... (${silent ? 'silencioso' : 'completo'})`);
+      console.log('[Dashboard] Cargando datos... (' + (silent ? 'silencioso' : 'completo') + ')');
 
       // Obtener datos de las APIs en paralelo
       const [inventoryResponse, activityResponse, summaryResponse] = await Promise.all([
@@ -88,7 +98,7 @@ const Dashboard = () => {
       if (!silent) setLoading(true);
       if (!silent) setError(null);
 
-      console.log(`Dashboard: Obteniendo historial reciente... (${silent ? 'silencioso' : 'completo'})`);
+      console.log('[Dashboard] Obteniendo historial reciente... (' + (silent ? 'silencioso' : 'completo') + ')');
       const response = await api.get('/api/history');
 
       // Procesar respuesta
@@ -125,73 +135,74 @@ const Dashboard = () => {
   }, []);
 
   // Carga inicial
-  useEffect(() => {
-    // Verificar si es admin
-    let user = {};
-    try {
-      const storedUser = localStorage.getItem("user");
-      if (storedUser && storedUser !== "undefined") {
-        user = JSON.parse(storedUser);
-      }
-    } catch (e) {
-      console.error("Error parsing user from localStorage", e);
-      localStorage.removeItem("user");
-    }
-    setIsAdmin(user.roleId === 1);
+  const hasViewPermission = can('dashboard_view');
 
-    // Cargar datos
-    if (user.roleId === 1) {
+  useEffect(() => {
+    // Si tiene permiso de ver dashboard, cargar datos
+    if (hasViewPermission) {
       fetchRecentHistory();
       fetchChartData();
     } else {
+      // Si no tiene permiso, redirigir a la primera ruta permitida
+      // Esto es un fallback por si PermissionRoute no lo atrapó (ej. acceso directo a /dashboard)
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        const permissions = user.permissions || [];
+
+        // Mapa de permisos a rutas
+        const routeMap = [
+          { permission: 'user_read', path: '/team' },
+          { permission: 'product_read', path: '/products' },
+          { permission: 'provider_read', path: '/providers' },
+          { permission: 'category_read', path: '/categories' },
+          { permission: 'location_read', path: '/locations' },
+          { permission: 'brand_read', path: '/brands' },
+          { permission: 'rank_read', path: '/ranks' },
+          { permission: 'role_read', path: '/roles' },
+          { permission: 'history_view', path: '/history' },
+          { permission: 'view_faq', path: '/faq' }
+        ];
+
+        const firstAllowed = routeMap.find(r => permissions.includes(r.permission));
+        if (firstAllowed) {
+          console.log(`[Dashboard] Redirigiendo a ${firstAllowed.path} por falta de permisos en dashboard`);
+          navigate(firstAllowed.path, { replace: true });
+        }
+      }
+
       setLoading(false);
       setChartsLoading(false);
     }
-  }, [fetchChartData, fetchRecentHistory]);
+  }, [fetchChartData, fetchRecentHistory, hasViewPermission, navigate]);
 
-  // Polling y Event Listeners
+  // Escuchar eventos de Socket.io
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!socket || !hasViewPermission) return;
 
-    // Polling
-    const intervalId = setInterval(() => {
-      fetchRecentHistory({ silent: true });
-      fetchChartData({ silent: true });
-    }, POLL_INTERVAL);
-
-    // Event Handlers
-    const handleUpdate = () => {
-      console.log('📢 Evento recibido en Dashboard, actualizando...');
+    const handleDashboardUpdate = (data) => {
+      console.log('🔔 Dashboard update received:', data);
       fetchRecentHistory({ silent: true });
       fetchChartData({ silent: true });
     };
 
-    // Eventos de ventana
-    window.addEventListener("productCreated", handleUpdate);
-    window.addEventListener("productUpdated", handleUpdate);
-    window.addEventListener("productDeleted", handleUpdate);
-    window.addEventListener("productStatusChanged", handleUpdate);
-    window.addEventListener("stockChanged", handleUpdate);
+    // Listen for history updates which cover most actions
+    socket.on('history_updated', handleDashboardUpdate);
 
-    // Eventos de storage (cross-tab)
-    const handleStorageChange = (e) => {
-      if (e.key === 'productChanged' && e.newValue !== e.oldValue) {
-        console.log('📢 Storage event: productChanged');
-        handleUpdate();
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
+    // Also listen for specific events that might affect charts but not history directly (though usually they do)
+    socket.on('product_created', handleDashboardUpdate);
+    socket.on('product_updated', handleDashboardUpdate);
+    socket.on('product_deleted', handleDashboardUpdate);
+    socket.on('stock_updated', handleDashboardUpdate);
 
     return () => {
-      clearInterval(intervalId);
-      window.removeEventListener("productCreated", handleUpdate);
-      window.removeEventListener("productUpdated", handleUpdate);
-      window.removeEventListener("productDeleted", handleUpdate);
-      window.removeEventListener("productStatusChanged", handleUpdate);
-      window.removeEventListener("stockChanged", handleUpdate);
-      window.removeEventListener("storage", handleStorageChange);
+      socket.off('history_updated', handleDashboardUpdate);
+      socket.off('product_created', handleDashboardUpdate);
+      socket.off('product_updated', handleDashboardUpdate);
+      socket.off('product_deleted', handleDashboardUpdate);
+      socket.off('stock_updated', handleDashboardUpdate);
     };
-  }, [isAdmin, fetchRecentHistory, fetchChartData]);
+  }, [socket, fetchRecentHistory, fetchChartData, hasViewPermission]);
 
 
   // Función mejorada para colores de acciones con mejor contraste
@@ -207,398 +218,407 @@ const Dashboard = () => {
 
     return 'default';
   };
+
   const handleVerMas = () => {
     navigate('/history');
   };
 
   return (
     <Box m="20px">
-      {/* HEADER */}
-      <Box display="flex" justifyContent="space-between" alignItems="center">
-        <Header title="DASHBOARD" subtitle="Resumen del sistema NauticStock" />
-      </Box>
+      {/* MAIN LAYOUT - Full height flex container */}
+      <Box display="flex" flexDirection={{ xs: 'column', lg: 'row' }} gap="20px">
 
-      {/* TARJETAS DE RESUMEN */}
-      {isAdmin && (
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography color="textSecondary" gutterBottom>
-                  Total de Productos
-                </Typography>
-                <Typography variant="h4">
-                  {chartsLoading ? <CircularProgress size={24} /> : summaryData.productos_total || 0}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography color="textSecondary" gutterBottom>
-                  Total de Stock
-                </Typography>
-                <Typography variant="h4">
-                  {chartsLoading ? <CircularProgress size={24} /> : summaryData.stock_total || 0}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography color="textSecondary" gutterBottom>
-                  Usuarios Activos
-                </Typography>
-                <Typography variant="h4">
-                  {chartsLoading ? <CircularProgress size={24} /> : `${summaryData.usuarios_activos || 0}/${summaryData.usuarios_total || 0}`}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <Card>
-              <CardContent>
-                <Typography color="textSecondary" gutterBottom>
-                  Actividad (7 días)
-                </Typography>
-                <Typography variant="h4">
-                  {chartsLoading ? <CircularProgress size={24} /> : summaryData.actividad_semanal || 0}
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid >
-      )}
+        {/* LEFT COLUMN: HEADER + CARDS + CHARTS */}
+        <Box flex={1} display="flex" flexDirection="column" gap="20px">
 
-      {/* CONTENEDOR PRINCIPAL - AUMENTADO */}
-      <Box display="flex" mt="0px" gap="20px" height="800px"> {/* Aumentado de 700px a 800px */}
-        {/* Gráficas lado izquierdo - MÁS ESPACIO */}
-        <Box flex={1.5} display="flex" flexDirection="column" justifyContent="space-between" alignItems="center">
-
-          {/* 📊 GRÁFICA DE INVENTARIO POR CATEGORÍA - MÁS ALTURA */}
-          <Box width="100%" height="60%" display="flex" flexDirection="column" alignItems="center"> {/* Aumentado de 50% a 60% */}
-            <Typography variant="h6" gutterBottom sx={{ color: chartColors.text, fontWeight: 'bold' }}>
-              Inventario por Categoría
-            </Typography>
-            {!isAdmin ? (
-              <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <Typography variant="body2" color="text.secondary">
-                  Solo administradores pueden ver las estadísticas
-                </Typography>
-              </Box>
-            ) : chartsLoading ? (
-              <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <CircularProgress size={40} />
-              </Box>
-            ) : inventoryData.length === 0 ? (
-              <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <Typography variant="body2" color="text.secondary">
-                  No hay datos de inventario disponibles
-                </Typography>
-              </Box>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={inventoryData}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 120 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-                  <XAxis
-                    dataKey="categoria"
-                    tick={{ fontSize: 11, fill: chartColors.text }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={120}
-                    stroke={chartColors.text}
-                    interval={0}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 12, fill: chartColors.text }}
-                    stroke={chartColors.text}
-                    width={60}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: chartColors.tooltipBg,
-                      border: `1px solid ${chartColors.grid}`,
-                      borderRadius: '8px',
-                      color: chartColors.text,
-                      fontSize: '14px'
-                    }}
-                    formatter={(value, name) => [
-                      name === 'Total en Stock' ? `${value} unidades` : `${value} productos`,
-                      name
-                    ]}
-                    labelFormatter={(label) => `Categoría: ${label}`}
-                  />
-                  <Legend
-                    wrapperStyle={{
-                      color: chartColors.text,
-                      fontSize: '14px',
-                      paddingTop: '10px'
-                    }}
-                  />
-                  <Bar
-                    dataKey="cantidad"
-                    fill={chartColors.primary}
-                    name="Total en Stock"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={60}
-                  />
-                  <Bar
-                    dataKey="productos"
-                    fill={chartColors.secondary}
-                    name="Productos Distintos"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={60}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+          {/* HEADER */}
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Header title="DASHBOARD" subtitle="Resumen del sistema NauticStock" />
           </Box>
 
-          {/* 📈 GRÁFICA DE ACTIVIDAD DEL SISTEMA - REDUCIDA */}
-          <Box width="100%" height="35%" display="flex" flexDirection="column" alignItems="center"> {/* Reducido de 45% a 35% */}
-            <Typography variant="h6" gutterBottom sx={{ color: chartColors.text, fontWeight: 'bold' }}>
-              Actividad del Sistema (Últimos 30 días)
-            </Typography>
-            {!isAdmin ? (
-              <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <Typography variant="body2" color="text.secondary">
-                  Solo administradores pueden ver las estadísticas
-                </Typography>
-              </Box>
-            ) : chartsLoading ? (
-              <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <CircularProgress size={40} />
-              </Box>
-            ) : activityData.length === 0 ? (
-              <Box display="flex" justifyContent="center" alignItems="center" height="100%">
-                <Typography variant="body2" color="text.secondary">
-                  No hay datos de actividad disponibles
-                </Typography>
-              </Box>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={activityData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}> {/* Reducido bottom margin */}
-                  <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
-                  <XAxis
-                    dataKey="fecha"
-                    tick={{ fontSize: 10, fill: chartColors.text }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={60}
-                    stroke={chartColors.text}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: chartColors.text }}
-                    stroke={chartColors.text}
-                    width={45}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: chartColors.tooltipBg,
-                      border: `1px solid ${chartColors.grid}`,
-                      borderRadius: '8px',
-                      color: chartColors.text,
-                      fontSize: '13px' // Reducido
-                    }}
-                    formatter={(value, name) => [`${value} operaciones`, 'Actividad']}
-                    labelFormatter={(label) => `Fecha: ${label}`}
-                  />
-                  <Legend
-                    wrapperStyle={{
-                      color: chartColors.text,
-                      fontSize: '13px' // Reducido
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="actividad"
-                    stroke={chartColors.lineColor}
-                    strokeWidth={2}
-                    dot={{ fill: chartColors.lineColor, strokeWidth: 2, r: 3 }}
-                    activeDot={{ r: 5, fill: chartColors.activeDot }}
-                    name="Operaciones"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
+          {/* TARJETAS DE RESUMEN */}
+          {hasViewPermission && (
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card>
+                  <CardContent>
+                    <Typography color="textSecondary" gutterBottom>
+                      Total de Productos
+                    </Typography>
+                    <Typography variant="h4">
+                      {chartsLoading ? <CircularProgress size={24} /> : summaryData.productos_total || 0}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card>
+                  <CardContent>
+                    <Typography color="textSecondary" gutterBottom>
+                      Total de Stock
+                    </Typography>
+                    <Typography variant="h4">
+                      {chartsLoading ? <CircularProgress size={24} /> : summaryData.stock_total || 0}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card>
+                  <CardContent>
+                    <Typography color="textSecondary" gutterBottom>
+                      Usuarios Activos
+                    </Typography>
+                    <Typography variant="h4">
+                      {chartsLoading ? <CircularProgress size={24} /> : (summaryData.usuarios_activos || 0) + '/' + (summaryData.usuarios_total || 0)}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Card>
+                  <CardContent>
+                    <Typography color="textSecondary" gutterBottom>
+                      Actividad (7 días)
+                    </Typography>
+                    <Typography variant="h4">
+                      {chartsLoading ? <CircularProgress size={24} /> : summaryData.actividad_semanal || 0}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+          )}
+
+          {/* GRÁFICAS */}
+          <Box display="flex" flexDirection="column" gap="20px">
+
+            {/* 📊 GRÁFICA DE INVENTARIO POR CATEGORÍA */}
+            <Box height="450px" display="flex" flexDirection="column" alignItems="center">
+              <Typography variant="h6" gutterBottom sx={{ color: chartColors.text, fontWeight: 'bold' }}>
+                Inventario por Categoría
+              </Typography>
+              {!hasViewPermission ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                  <Typography variant="body2" color="text.secondary">
+                    No tienes permisos para ver las estadísticas
+                  </Typography>
+                </Box>
+              ) : chartsLoading ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                  <CircularProgress size={40} />
+                </Box>
+              ) : inventoryData.length === 0 ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                  <Typography variant="body2" color="text.secondary">
+                    No hay datos de inventario disponibles
+                  </Typography>
+                </Box>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={inventoryData}
+                    margin={{ top: 20, right: 30, left: 20, bottom: 120 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+                    <XAxis
+                      dataKey="categoria"
+                      tick={{ fontSize: 11, fill: chartColors.text }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={120}
+                      stroke={chartColors.text}
+                      interval={0}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 12, fill: chartColors.text }}
+                      stroke={chartColors.text}
+                      width={60}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: chartColors.tooltipBg,
+                        border: `1px solid ${chartColors.grid}`,
+                        borderRadius: '8px',
+                        color: chartColors.text,
+                        fontSize: '14px'
+                      }}
+                      formatter={(value, name) => [
+                        name === 'Total en Stock' ? `${value} unidades` : `${value} productos`,
+                        name
+                      ]}
+                      labelFormatter={(label) => `Categoría: ${label}`}
+                    />
+                    <Legend
+                      wrapperStyle={{
+                        color: chartColors.text,
+                        fontSize: '14px',
+                        paddingTop: '10px'
+                      }}
+                    />
+                    <Bar
+                      dataKey="cantidad"
+                      fill={chartColors.primary}
+                      name="Total en Stock"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={60}
+                    />
+                    <Bar
+                      dataKey="productos"
+                      fill={chartColors.secondary}
+                      name="Productos Distintos"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={60}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </Box>
+
+            {/* 📈 GRÁFICA DE ACTIVIDAD DEL SISTEMA */}
+            <Box height="350px" display="flex" flexDirection="column" alignItems="center">
+              <Typography variant="h6" gutterBottom sx={{ color: chartColors.text, fontWeight: 'bold' }}>
+                Actividad del Sistema (Últimos 30 días)
+              </Typography>
+              {!hasViewPermission ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                  <Typography variant="body2" color="text.secondary">
+                    No tienes permisos para ver las estadísticas
+                  </Typography>
+                </Box>
+              ) : chartsLoading ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                  <CircularProgress size={40} />
+                </Box>
+              ) : activityData.length === 0 ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                  <Typography variant="body2" color="text.secondary">
+                    No hay datos de actividad disponibles
+                  </Typography>
+                </Box>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={activityData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+                    <XAxis
+                      dataKey="fecha"
+                      tick={{ fontSize: 10, fill: chartColors.text }}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                      stroke={chartColors.text}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: chartColors.text }}
+                      stroke={chartColors.text}
+                      width={45}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: chartColors.tooltipBg,
+                        border: `1px solid ${chartColors.grid}`,
+                        borderRadius: '8px',
+                        color: chartColors.text,
+                        fontSize: '13px'
+                      }}
+                      formatter={(value, name) => [`${value} operaciones`, 'Actividad']}
+                      labelFormatter={(label) => `Fecha: ${label}`}
+                    />
+                    <Legend
+                      wrapperStyle={{
+                        color: chartColors.text,
+                        fontSize: '13px'
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="actividad"
+                      stroke={chartColors.lineColor}
+                      strokeWidth={2}
+                      dot={{ fill: chartColors.lineColor, strokeWidth: 2, r: 3 }}
+                      activeDot={{ r: 5, fill: chartColors.activeDot }}
+                      name="Operaciones"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </Box>
           </Box>
         </Box>
 
-        {/* Contenedor derecho con historial */}
+        {/* RIGHT COLUMN: RECENT ACTIVITY TABLE */}
         <Box
-          flex={1}
+          width={{ xs: '100%', lg: '50%' }}
+          minWidth="450px"
           bgcolor="rgba(0, 0, 0, 0.7)"
           borderRadius="20px"
           p="20px"
           color="#A5D6A7"
           boxShadow="0 4px 15px rgba(0, 0, 0, 0.5)"
           fontFamily="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif"
-          overflowY="auto"
-          height="100%"
-          maxHeight="100%"
           display="flex"
           flexDirection="column"
+          height="auto"
+          alignSelf="flex-start" // Fix empty space by not stretching
+          sx={{ overflowY: 'hidden' }} // Let the table container handle scroll
         >
           <Typography variant="h6" fontWeight="bold" mb={2}>
             Actividad Reciente del Sistema
           </Typography>
 
           {/* Mostrar contenido según el estado */}
-          {!isAdmin ? (
-            <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
-              <Typography variant="body2" color="#888">
-                Solo los administradores pueden ver el historial de actividades
-              </Typography>
-            </Box>
-          ) : loading ? (
-            <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
-              <CircularProgress size={30} sx={{ color: "#A5D6A7" }} />
-              <Typography variant="body2" ml={2}>
-                Cargando historial...
-              </Typography>
-            </Box>
-          ) : error ? (
-            <Box flex={1}>
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {error}
-              </Alert>
-              <Button
-                onClick={fetchRecentHistory}
-                variant="contained"
-                color="primary"
-                size="small"
-              >
-                Reintentar
-              </Button>
-            </Box>
-          ) : historyData.length === 0 ? (
-            <Box display="flex" justifyContent="center" alignItems="center" flex={1}>
-              <Typography variant="body2" color="#888">
-                No hay actividades registradas
-              </Typography>
-            </Box>
-          ) : (
-            <>
-              <TableContainer
-                component={Paper}
-                sx={{
-                  backgroundColor: "rgba(255,255,255,0.1)",
-                  flexGrow: 1,
-                  overflowY: "auto",
-                  mb: 2
-                }}
-              >
-                <Table stickyHeader aria-label="historial reciente" sx={{ minWidth: 300 }}>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
-                        Fecha
-                      </TableCell>
-                      <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
-                        Acción
-                      </TableCell>
-                      <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
-                        Usuario
-                      </TableCell>
-                      <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
-                        Descripción
-                      </TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {historyData.map((row) => (
-                      <TableRow
-                        key={row.id}
-                        hover
-                        sx={{
-                          cursor: "pointer",
-                          "&:hover": {
-                            backgroundColor: "rgba(255,255,255,0.1)"
-                          }
-                        }}
-                      >
-                        <TableCell sx={{
-                          color: "#C8E6C9",
-                          fontSize: "0.7rem",
-                          fontFamily: "monospace",
-                          minWidth: "100px"
-                        }}>
-                          {row.fecha}
-                        </TableCell>
-                        <TableCell sx={{
-                          color: "#C8E6C9",
-                          fontSize: "0.7rem",
-                          minWidth: "100px"
-                        }}>
-                          <Chip
-                            label={row.accion}
-                            color={getActionColor(row.accion)}
-                            size="small"
-                            sx={{
-                              fontSize: "0.65rem",
-                              height: "22px",
-                              fontWeight: "bold",
-                              '& .MuiChip-label': {
-                                color: '#ffffff',
-                                fontWeight: 'bold',
-                                textShadow: '1px 1px 2px rgba(0,0,0,0.7)'
-                              }
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell sx={{
-                          color: "#C8E6C9",
-                          fontSize: "0.7rem",
-                          fontWeight: "bold"
-                        }}>
-                          {row.quien}
-                        </TableCell>
-                        <TableCell sx={{
-                          color: "#C8E6C9",
-                          fontSize: "0.7rem",
-                          maxWidth: "150px",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap"
-                        }}>
-                          {row.descripcion}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-
-              {/* Botón Ver Más */}
-              <Box display="flex" justifyContent="center">
+          {
+            !hasViewPermission ? (
+              <Box display="flex" justifyContent="center" alignItems="center" flex={1} minHeight="200px">
+                <Typography variant="body2" color="#888">
+                  No tienes permisos para ver el historial de actividades
+                </Typography>
+              </Box>
+            ) : loading ? (
+              <Box display="flex" justifyContent="center" alignItems="center" flex={1} minHeight="200px">
+                <CircularProgress size={30} sx={{ color: "#A5D6A7" }} />
+                <Typography variant="body2" ml={2}>
+                  Cargando historial...
+                </Typography>
+              </Box>
+            ) : error ? (
+              <Box flex={1}>
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
                 <Button
+                  onClick={fetchRecentHistory}
                   variant="contained"
                   color="primary"
-                  onClick={handleVerMas}
                   size="small"
-                  sx={{
-                    bgcolor: "#4caf50",
-                    color: "white",
-                    fontWeight: "bold",
-                    px: 2,
-                    py: 0.5,
-                    "&:hover": {
-                      bgcolor: "#45a049"
-                    }
-                  }}
                 >
-                  Ver Historial Completo
+                  Reintentar
                 </Button>
               </Box>
-            </>
-          )}
-        </Box>
-      </Box>
+            ) : historyData.length === 0 ? (
+              <Box display="flex" justifyContent="center" alignItems="center" flex={1} minHeight="200px">
+                <Typography variant="body2" color="#888">
+                  No hay actividades registradas
+                </Typography>
+              </Box>
+            ) : (
+              <>
+                <TableContainer
+                  component={Paper}
+                  sx={{
+                    backgroundColor: "rgba(255,255,255,0.1)",
+                    flexGrow: 1,
+                    overflowY: "auto",
+                    overflowX: "hidden", // Hide horizontal scroll if content fits
+                    mb: 2,
+                    maxHeight: '600px'
+                  }}
+                >
+                  <Table stickyHeader size="small" aria-label="historial reciente">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
+                          Fecha
+                        </TableCell>
+                        <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
+                          Acción
+                        </TableCell>
+                        <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
+                          Usuario
+                        </TableCell>
+                        <TableCell sx={{ color: "#A5D6A7", fontWeight: "bold", fontSize: "0.8rem" }}>
+                          Descripción
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filteredHistory.map((row) => (
+                        <TableRow
+                          key={row.id}
+                          hover
+                          sx={{
+                            cursor: "pointer",
+                            "&:hover": {
+                              backgroundColor: "rgba(255,255,255,0.1)"
+                            }
+                          }}
+                        >
+                          <TableCell sx={{
+                            color: "#C8E6C9",
+                            fontSize: "0.7rem",
+                            fontFamily: "monospace",
+                            minWidth: "110px"
+                          }}>
+                            {row.fecha}
+                          </TableCell>
+                          <TableCell sx={{
+                            color: "#C8E6C9",
+                            fontSize: "0.7rem",
+                            minWidth: "100px"
+                          }}>
+                            <Chip
+                              label={<SearchHighlighter text={row.accion} searchTerm={searchTerm} />}
+                              color={getActionColor(row.accion)}
+                              size="small"
+                              sx={{
+                                fontSize: "0.65rem",
+                                height: "22px",
+                                fontWeight: "bold",
+                                '& .MuiChip-label': {
+                                  color: '#ffffff',
+                                  fontWeight: 'bold',
+                                  textShadow: '1px 1px 2px rgba(0,0,0,0.7)'
+                                }
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell sx={{
+                            color: "#C8E6C9",
+                            fontSize: "0.7rem",
+                            fontWeight: "bold"
+                          }}>
+                            <SearchHighlighter text={row.quien} searchTerm={searchTerm} />
+                          </TableCell>
+                          <TableCell sx={{
+                            color: "#C8E6C9",
+                            fontSize: "0.7rem",
+                            whiteSpace: "normal", // Allow wrapping
+                            wordBreak: "break-word"
+                          }}>
+                            <SearchHighlighter text={row.descripcion} searchTerm={searchTerm} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+
+                {/* Botón Ver Más */}
+                <Box display="flex" justifyContent="center">
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleVerMas}
+                    size="small"
+                    sx={{
+                      bgcolor: "#4caf50",
+                      color: "white",
+                      fontWeight: "bold",
+                      px: 2,
+                      py: 0.5,
+                      "&:hover": {
+                        bgcolor: "#45a049"
+                      }
+                    }}
+                  >
+                    Ver Historial Completo
+                  </Button>
+                </Box>
+              </>
+            )
+          }
+        </Box >
+      </Box >
     </Box >
   );
 };

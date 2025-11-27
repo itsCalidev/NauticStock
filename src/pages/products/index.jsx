@@ -1,86 +1,97 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Button,
   Box,
+  Button,
+  useTheme,
+  IconButton,
+  Typography,
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions,
   TextField,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  Typography,
-  useTheme,
-  IconButton,
-  Tooltip,
-  CircularProgress,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
   TableContainer,
+  Table,
   TableHead,
-  TableRow
+  TableRow,
+  TableCell,
+  TableBody,
+  Paper,
+  Tooltip,
+  CircularProgress
 } from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
-import EditIcon from "@mui/icons-material/Edit";
-import DeleteIcon from "@mui/icons-material/Delete";
-import BlockIcon from "@mui/icons-material/Block";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import AddCircleIcon from "@mui/icons-material/AddCircle";
-import RemoveCircleIcon from "@mui/icons-material/RemoveCircle";
-import Header from "../../components/Header";
-import { Token } from "../../theme";
-import api from '../../api/axiosClient';
-import { useSearch } from '../../contexts/SearchContext';
-import SearchHighlighter from '../../components/SearchHighlighter';
-import AppSnackbar from "../../components/AppSnackbar";
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  AddCircle as AddCircleIcon,
+  RemoveCircle as RemoveCircleIcon,
+  Block as BlockIcon,
+  CheckCircle as CheckCircleIcon,
+  FileDownload as FileDownloadIcon
+} from "@mui/icons-material";
 import { Formik } from "formik";
 import * as yup from "yup";
-
-const POLL_INTERVAL = 5000; // cada 5 segundos
+import Header from "../../components/Header";
+import { Token } from "../../theme";
+import AppSnackbar from "../../components/AppSnackbar";
+import api from "../../api/axiosClient";
+import usePermission from "../../hooks/usePermission";
+import { useSocket } from "../../context/SocketContext";
+import { useSearch } from "../../contexts/SearchContext";
+import SearchHighlighter from "../../components/SearchHighlighter";
+import { flexibleMatch } from "../../utils/searchUtils";
+import { exportToExcel } from "../../utils/exportUtils";
 
 const productSchema = yup.object().shape({
   part_number: yup.string().required("Requerido"),
   description: yup.string().required("Requerido"),
   price: yup.number().required("Requerido").positive("Debe ser positivo"),
-  quantity: yup.number().required("Requerido").min(0, "No puede ser negativo"), // Renamed from stock
+  quantity: yup.number().required("Requerido").min(0, "No puede ser negativo"),
   min_stock: yup.number().required("Requerido").min(0, "No puede ser negativo"),
-  max_stock: yup.number().required("Requerido").moreThan(yup.ref('min_stock'), "Debe ser mayor al stock mínimo"),
-  categoryId: yup.number().required("Requerido"),
-  brandId: yup.number().required("Requerido"),
-  providerId: yup.number().required("Requerido"),
-  locationId: yup.number().required("Requerido"),
+  max_stock: yup.number().required("Requerido").min(0, "No puede ser negativo"),
+  categoryId: yup.string().required("Requerido"),
+  brandId: yup.string().required("Requerido"),
+  providerId: yup.string().required("Requerido"),
+  locationId: yup.string().required("Requerido"),
 });
 
 export default function Products() {
   const theme = useTheme();
-  const colors = useMemo(() => Token(theme.palette.mode), [theme.palette.mode]);
+  const colors = Token(theme.palette.mode);
   const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showInactive, setShowInactive] = useState(true);
-
-  // Estados para dropdowns
   const [categories, setCategories] = useState([]);
   const [brands, setBrands] = useState([]);
   const [providers, setProviders] = useState([]);
   const [locations, setLocations] = useState([]);
-
-  // Estados para diálogos
   const [openDialog, setOpenDialog] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+
+  const { can } = usePermission();
+  const socket = useSocket();
+  const { searchTerm, isSearching } = useSearch();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!can('product_read')) {
+      navigate('/');
+    }
+  }, [can, navigate]);
 
   const [stockDialog, setStockDialog] = useState({
     open: false,
     productId: null,
     productName: '',
     currentStock: 0,
-    operation: 'add',
+    operation: 'add', // 'add' or 'remove'
     amount: 1
   });
 
@@ -90,33 +101,22 @@ export default function Products() {
     productName: ''
   });
 
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: "",
-    severity: "success",
-  });
-
-  // Contexto de búsqueda
-  const { searchTerm, isSearching } = useSearch();
-
-  // Cargar datos auxiliares (dropdowns)
+  // Cargar datos auxiliares
   useEffect(() => {
     const fetchAuxData = async () => {
       try {
-        const [catsRes, brandsRes, provsRes, locsRes] = await Promise.all([
-          api.get("/api/categories"),
-          api.get("/api/brands"),
-          api.get("/api/providers"),
-          api.get("/api/locations")
+        const [cats, brs, provs, locs] = await Promise.all([
+          api.get('/api/categories'),
+          api.get('/api/brands'),
+          api.get('/api/providers'),
+          api.get('/api/locations')
         ]);
-
-        setCategories(Array.isArray(catsRes.data) ? catsRes.data : catsRes.data?.data || []);
-        setBrands(Array.isArray(brandsRes.data) ? brandsRes.data : brandsRes.data?.data || []);
-        setProviders(Array.isArray(provsRes.data) ? provsRes.data : provsRes.data?.data || []);
-        setLocations(Array.isArray(locsRes.data) ? locsRes.data : locsRes.data?.data || []);
-
+        setCategories(cats.data.data);
+        setBrands(brs.data.data);
+        setProviders(provs.data.data);
+        setLocations(locs.data.data);
       } catch (err) {
-        console.error("Error cargando datos auxiliares:", err);
+        console.error("Error cargando datos auxiliares", err);
       }
     };
     fetchAuxData();
@@ -127,24 +127,14 @@ export default function Products() {
     let filtered = showInactive ? products : products.filter(product => product.status === 0);
 
     if (isSearching && searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      filtered = filtered.filter(product =>
-        (product.name && product.name.toLowerCase().includes(lowerTerm)) ||
-        (product.description && product.description.toLowerCase().includes(lowerTerm)) ||
-        (product.category && product.category.toLowerCase().includes(lowerTerm)) ||
-        (product.type && product.type.toLowerCase().includes(lowerTerm)) ||
-        (product.provider && product.provider.toLowerCase().includes(lowerTerm)) ||
-        (product.location && product.location.toLowerCase().includes(lowerTerm))
-      );
+      filtered = filtered.filter(product => {
+        const searchableText = `${product.name} ${product.description} ${product.category} ${product.type} ${product.provider} ${product.location}`;
+        return flexibleMatch(searchableText, searchTerm);
+      });
     }
 
     return filtered;
   }, [products, showInactive, isSearching, searchTerm]);
-
-  useEffect(() => {
-    const user = JSON.parse(localStorage.getItem("user") || "{}");
-    setIsAdmin(user.roleId === 1);
-  }, []);
 
   const loadProducts = useCallback(async ({ silent = false } = {}) => {
     try {
@@ -165,7 +155,11 @@ export default function Products() {
         max_stock: product.max_stock || 0,
         status: product.status || 0,
         // Guardar valores originales para edición
-        original: product
+        original: product,
+        category_id: product.category_id,
+        brand_id: product.brand_id,
+        provider_id: product.provider_id,
+        location_id: product.location_id
       }));
 
       setProducts(transformedData);
@@ -177,37 +171,34 @@ export default function Products() {
     }
   }, []);
 
-  // Carga inicial y polling
+  // Carga inicial
   useEffect(() => {
     loadProducts();
-    const intervalId = setInterval(() => loadProducts({ silent: true }), POLL_INTERVAL);
-    return () => clearInterval(intervalId);
   }, [loadProducts]);
 
-  // Escuchar eventos de otras ventanas/pestañas
+  // Escuchar eventos de Socket.io
   useEffect(() => {
-    const handleReload = () => loadProducts({ silent: true });
+    if (!socket) return;
 
-    window.addEventListener("productCreated", handleReload);
-    window.addEventListener("productUpdated", handleReload);
-    window.addEventListener("productDeleted", handleReload);
-    window.addEventListener("productStatusChanged", handleReload);
-    window.addEventListener("stockChanged", handleReload);
-
-    const handleStorageChange = (e) => {
-      if (e.key === 'productChanged') handleReload();
+    const handleProductUpdate = (data) => {
+      console.log('🔔 Product update received:', data);
+      loadProducts({ silent: true });
     };
-    window.addEventListener("storage", handleStorageChange);
+
+    socket.on('product_created', handleProductUpdate);
+    socket.on('product_updated', handleProductUpdate);
+    socket.on('product_deleted', handleProductUpdate);
+    socket.on('product_status_changed', handleProductUpdate);
+    socket.on('stock_updated', handleProductUpdate);
 
     return () => {
-      window.removeEventListener("productCreated", handleReload);
-      window.removeEventListener("productUpdated", handleReload);
-      window.removeEventListener("productDeleted", handleReload);
-      window.removeEventListener("productStatusChanged", handleReload);
-      window.removeEventListener("stockChanged", handleReload);
-      window.removeEventListener("storage", handleStorageChange);
+      socket.off('product_created', handleProductUpdate);
+      socket.off('product_updated', handleProductUpdate);
+      socket.off('product_deleted', handleProductUpdate);
+      socket.off('product_status_changed', handleProductUpdate);
+      socket.off('stock_updated', handleProductUpdate);
     };
-  }, [loadProducts]);
+  }, [socket, loadProducts]);
 
   const handleOpenDialog = useCallback((product = null) => {
     setEditingProduct(product);
@@ -234,9 +225,6 @@ export default function Products() {
 
       handleCloseDialog();
       resetForm();
-      loadProducts();
-      window.dispatchEvent(new Event(editingProduct ? "productUpdated" : "productCreated"));
-
     } catch (err) {
       console.error('Error guardando producto:', err);
       const msg = err.response?.data?.error || err.response?.data?.message || "Error al guardar producto";
@@ -245,17 +233,6 @@ export default function Products() {
       setIsSubmitting(false);
     }
   };
-
-  const handleStockChange = useCallback((productId, productName, currentStock, operation) => {
-    setStockDialog({
-      open: true,
-      productId,
-      productName,
-      currentStock,
-      operation,
-      amount: 1
-    });
-  }, []);
 
   const handleStockConfirm = useCallback(async () => {
     try {
@@ -270,34 +247,28 @@ export default function Products() {
       await api.put(`/api/products/${productId}`, { quantity: newStock });
       setSnackbar({ open: true, message: "Stock actualizado exitosamente", severity: "success" });
       setStockDialog(prev => ({ ...prev, open: false }));
-      loadProducts();
-      window.dispatchEvent(new Event("stockChanged"));
     } catch (err) {
       console.error('Error actualizando stock:', err);
       setSnackbar({ open: true, message: "Error al actualizar stock", severity: "error" });
     }
-  }, [stockDialog, loadProducts]);
+  }, [stockDialog]);
 
   const handleToggleStatus = useCallback(async (id, currentStatus) => {
     try {
       const newStatus = currentStatus === 0 ? 1 : 0;
       await api.put(`/api/products/${id}`, { status: newStatus });
       setSnackbar({ open: true, message: `Producto ${newStatus === 0 ? 'habilitado' : 'deshabilitado'}`, severity: "success" });
-      loadProducts();
-      window.dispatchEvent(new Event("productStatusChanged"));
     } catch (err) {
       console.error('Error cambiando estado:', err);
       setSnackbar({ open: true, message: "Error al cambiar estado", severity: "error" });
     }
-  }, [loadProducts]);
+  }, []);
 
   const handleDelete = async () => {
     try {
       await api.delete(`/api/products/${deleteDialog.productId}`);
       setSnackbar({ open: true, message: "Producto eliminado exitosamente", severity: "success" });
       setDeleteDialog({ open: false, productId: null, productName: '' });
-      loadProducts();
-      window.dispatchEvent(new Event("productDeleted"));
     } catch (err) {
       console.error('Error eliminando producto:', err);
       setSnackbar({ open: true, message: "Error al eliminar producto", severity: "error" });
@@ -342,99 +313,188 @@ export default function Products() {
           </Typography>
         </Box>
 
-        {isAdmin && (
+        {/* Botón Crear Producto */}
+        <Box display="flex" gap={2}>
           <Button
             variant="contained"
-            color="secondary"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-            sx={{ px: 3, py: 1.5, fontWeight: 'bold' }}
+            color="success"
+            startIcon={<FileDownloadIcon />}
+            onClick={() => exportToExcel(filteredProducts.map(p => ({
+              Código: p.name,
+              Descripción: p.description,
+              Categoría: p.category,
+              Marca: p.type,
+              Proveedor: p.provider,
+              Stock: p.stock,
+              Precio: p.price,
+              Ubicación: p.location,
+              Estado: p.status === 0 ? 'Activo' : 'Inactivo'
+            })), 'Inventario_Productos')}
+            sx={{ fontWeight: 'bold' }}
           >
-            Crear Producto
+            Exportar Excel
           </Button>
-        )}
+          {can('product_create') && (
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog()}
+              sx={{ px: 3, py: 1.5, fontWeight: 'bold' }}
+            >
+              Crear Producto
+            </Button>
+          )}
+        </Box>
       </Box>
 
-      <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
+      {/* Tabla de Productos */}
+      <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400], mt: "40px" }}>
         <Table>
           <TableHead sx={{ backgroundColor: colors.blueAccent[700] }}>
             <TableRow>
-              <TableCell><Typography fontWeight="bold">Código / Nombre</Typography></TableCell>
+              <TableCell><Typography fontWeight="bold">Código</Typography></TableCell>
               <TableCell><Typography fontWeight="bold">Descripción</Typography></TableCell>
               <TableCell><Typography fontWeight="bold">Categoría</Typography></TableCell>
               <TableCell><Typography fontWeight="bold">Marca</Typography></TableCell>
               <TableCell><Typography fontWeight="bold">Proveedor</Typography></TableCell>
               <TableCell align="center"><Typography fontWeight="bold">Stock</Typography></TableCell>
-              <TableCell align="center"><Typography fontWeight="bold">Precio</Typography></TableCell>
+              <TableCell align="center"><Typography fontWeight="bold">Estado de Stock</Typography></TableCell>
+              <TableCell align="right"><Typography fontWeight="bold">Precio</Typography></TableCell>
               <TableCell><Typography fontWeight="bold">Ubicación</Typography></TableCell>
+              <TableCell align="center"><Typography fontWeight="bold">Estado</Typography></TableCell>
               <TableCell align="center"><Typography fontWeight="bold">Acciones</Typography></TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {filteredProducts.map((row) => {
-              const isActive = row.status === 0;
+            {filteredProducts.map((product) => {
+              const isActive = product.status === 0;
+
+              // Lógica de Estado de Stock
+              let stockStatus = { label: "Normal", color: "success" };
+              const stock = Number(product.stock);
+              const minStock = Number(product.min_stock);
+
+              if (stock === 0) {
+                stockStatus = { label: "Agotado", color: "error" }; // Rojo
+              } else if (stock <= minStock * 0.5) {
+                stockStatus = { label: "Crítico", color: "warning" }; // Naranja (usamos warning que es naranja/amarillo oscuro)
+              } else if (stock <= minStock) {
+                stockStatus = { label: "Bajo", color: "info" }; // Amarillo (usaremos un custom style o info si no hay amarillo directo)
+              }
+
               return (
-                <TableRow key={row.id} hover>
+                <TableRow key={product.id} hover>
                   <TableCell>
-                    <SearchHighlighter text={row.name} searchTerm={searchTerm} />
+                    <Box sx={{ display: 'flex', alignItems: 'center', opacity: isActive ? 1 : 0.5, textDecoration: isActive ? 'none' : 'line-through' }}>
+                      <SearchHighlighter text={product.name} searchTerm={searchTerm} />
+                      {!isActive && (
+                        <Box component="span" sx={{ ml: 1, px: 1, py: 0.2, bgcolor: 'error.main', color: 'white', borderRadius: 1, fontSize: '0.7rem' }}>
+                          INACTIVO
+                        </Box>
+                      )}
+                    </Box>
                   </TableCell>
-                  <TableCell>
-                    <SearchHighlighter text={row.description} searchTerm={searchTerm} />
-                  </TableCell>
-                  <TableCell>
-                    <SearchHighlighter text={row.category} searchTerm={searchTerm} />
-                  </TableCell>
-                  <TableCell>
-                    <SearchHighlighter text={row.type} searchTerm={searchTerm} />
-                  </TableCell>
-                  <TableCell>
-                    <SearchHighlighter text={row.provider} searchTerm={searchTerm} />
-                  </TableCell>
+                  <TableCell><SearchHighlighter text={product.description} searchTerm={searchTerm} /></TableCell>
+                  <TableCell><SearchHighlighter text={product.category} searchTerm={searchTerm} /></TableCell>
+                  <TableCell><SearchHighlighter text={product.type} searchTerm={searchTerm} /></TableCell>
+                  <TableCell><SearchHighlighter text={product.provider} searchTerm={searchTerm} /></TableCell>
                   <TableCell align="center">
-                    <span style={getStockStyle(row.stock, row.min_stock)}>{row.stock}</span>
-                  </TableCell>
-                  <TableCell align="center">
-                    <Typography color={colors.greenAccent[500]}>
-                      ${row.price}
+                    <Typography sx={getStockStyle(product.stock, product.min_stock)}>
+                      {product.stock}
                     </Typography>
                   </TableCell>
-                  <TableCell>
-                    <SearchHighlighter text={row.location} searchTerm={searchTerm} />
+                  <TableCell align="center">
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.5,
+                        borderRadius: 1,
+                        bgcolor: stockStatus.color === 'info' ? '#FBC02D' : `${stockStatus.color}.main`, // Amarillo custom para 'Bajo'
+                        color: stockStatus.color === 'info' ? 'black' : 'white',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        display: 'inline-block',
+                        minWidth: '80px'
+                      }}
+                    >
+                      {stockStatus.label}
+                    </Box>
+                  </TableCell>
+                  <TableCell align="right">${product.price.toFixed(2)}</TableCell>
+                  <TableCell><SearchHighlighter text={product.location} searchTerm={searchTerm} /></TableCell>
+                  <TableCell align="center">
+                    {/* Estado Chip */}
+                    <Box
+                      sx={{
+                        px: 1,
+                        py: 0.5,
+                        borderRadius: 1,
+                        bgcolor: isActive ? 'success.dark' : 'error.dark',
+                        color: 'white',
+                        fontSize: '0.75rem',
+                        display: 'inline-block'
+                      }}
+                    >
+                      {isActive ? 'Activo' : 'Inactivo'}
+                    </Box>
                   </TableCell>
                   <TableCell align="center">
                     <Box display="flex" justifyContent="center" gap={1}>
-                      <Tooltip title="Editar">
+                      <Tooltip title={isActive ? "Editar producto" : "No se puede editar un producto inactivo"}>
                         <span>
-                          <IconButton size="small" color="warning" onClick={() => handleOpenDialog(row.original)} disabled={!isAdmin || !isActive}>
-                            <EditIcon />
-                          </IconButton>
+                          {can('product_update') && (
+                            <IconButton size="small" color="warning" onClick={() => handleOpenDialog(product)} disabled={!isActive}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          )}
                         </span>
                       </Tooltip>
-                      <Tooltip title="Agregar Stock">
+
+                      {/* Botones de Stock */}
+                      <Tooltip title={isActive ? "Agregar stock" : "Habilite el producto para gestionar stock"}>
                         <span>
-                          <IconButton size="small" color="success" onClick={() => handleStockChange(row.id, row.name, row.stock, 'add')} disabled={!isActive}>
-                            <AddCircleIcon />
-                          </IconButton>
+                          {(can('product_update')) && (
+                            <IconButton
+                              size="small"
+                              color="success"
+                              onClick={() => setStockDialog({ open: true, productId: product.id, productName: product.name, currentStock: product.stock, operation: 'add', amount: 1 })}
+                              disabled={!isActive}
+                            >
+                              <AddCircleIcon fontSize="small" />
+                            </IconButton>
+                          )}
                         </span>
                       </Tooltip>
-                      <Tooltip title="Restar Stock">
+                      <Tooltip title={isActive ? "Restar stock" : "Habilite el producto para gestionar stock"}>
                         <span>
-                          <IconButton size="small" color="info" onClick={() => handleStockChange(row.id, row.name, row.stock, 'remove')} disabled={!isActive}>
-                            <RemoveCircleIcon />
-                          </IconButton>
+                          {(can('product_update')) && (
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => setStockDialog({ open: true, productId: product.id, productName: product.name, currentStock: product.stock, operation: 'remove', amount: 1 })}
+                              disabled={!isActive}
+                            >
+                              <RemoveCircleIcon fontSize="small" />
+                            </IconButton>
+                          )}
                         </span>
                       </Tooltip>
-                      <Tooltip title={isActive ? "Deshabilitar" : "Habilitar"}>
+
+                      <Tooltip title={isActive ? "Deshabilitar producto" : "Habilitar producto"}>
                         <span>
-                          <IconButton size="small" color={isActive ? "error" : "success"} onClick={() => handleToggleStatus(row.id, row.status)} disabled={!isAdmin}>
-                            {isActive ? <BlockIcon /> : <CheckCircleIcon />}
-                          </IconButton>
+                          {can('product_update') && (
+                            <IconButton size="small" color={isActive ? "error" : "success"} onClick={() => handleToggleStatus(product.id, product.status)}>
+                              {isActive ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
+                            </IconButton>
+                          )}
                         </span>
                       </Tooltip>
-                      {isAdmin && isActive && (
-                        <Tooltip title="Eliminar">
-                          <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, productId: row.id, productName: row.name })}>
-                            <DeleteIcon />
+
+                      {can('product_delete') && isActive && (
+                        <Tooltip title="Eliminar producto">
+                          <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, productId: product.id, productName: product.name })}>
+                            <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                       )}
@@ -453,28 +513,35 @@ export default function Products() {
         <DialogContent>
           <Formik
             initialValues={{
-              part_number: editingProduct?.part_number || "", // Fixed: use part_number
+              part_number: editingProduct?.part_number || "",
               description: editingProduct?.description || "",
               price: editingProduct?.price || 0,
-              quantity: editingProduct?.quantity || 0, // Fixed: use quantity and renamed
+              quantity: editingProduct?.quantity || 0,
               min_stock: editingProduct?.min_stock || 0,
               max_stock: editingProduct?.max_stock || 0,
-              categoryId: editingProduct?.category_id || "", // Fixed: remove .original
-              brandId: editingProduct?.brand_id || "", // Fixed: remove .original
-              providerId: editingProduct?.provider_id || "", // Fixed: remove .original
-              locationId: editingProduct?.location_id || "", // Fixed: remove .original
+              categoryId: editingProduct?.category_id || "",
+              brandId: editingProduct?.brand_id || "",
+              providerId: editingProduct?.provider_id || "",
+              locationId: editingProduct?.location_id || "",
             }}
             validationSchema={productSchema}
             onSubmit={handleFormSubmit}
           >
             {({ values, errors, touched, handleBlur, handleChange, handleSubmit }) => (
               <form onSubmit={handleSubmit} id="product-form">
-                <Box display="grid" gap="30px" gridTemplateColumns="repeat(4, minmax(0, 1fr))" sx={{ "& > div": { gridColumn: "span 4" } }}>
+                <Box
+                  display="grid"
+                  gap="20px"
+                  gridTemplateColumns="repeat(4, 1fr)"
+                  sx={{
+                    "& > div": { gridColumn: "span 4" },
+                  }}
+                >
                   <TextField
                     fullWidth
                     variant="filled"
                     type="text"
-                    label="Número de Parte / Código"
+                    label="Código de Parte"
                     onBlur={handleBlur}
                     onChange={handleChange}
                     value={values.part_number}
@@ -507,20 +574,20 @@ export default function Products() {
                     name="price"
                     error={!!touched.price && !!errors.price}
                     helperText={touched.price && errors.price}
-                    sx={{ gridColumn: "span 2" }}
+                    sx={{ gridColumn: "span 1" }}
                   />
                   <TextField
                     fullWidth
                     variant="filled"
                     type="number"
-                    label="Stock Inicial"
+                    label="Cantidad"
                     onBlur={handleBlur}
                     onChange={handleChange}
-                    value={values.quantity} // Renamed from stock
-                    name="quantity" // Renamed from stock
-                    error={!!touched.quantity && !!errors.quantity} // Renamed from stock
-                    helperText={touched.quantity && errors.quantity} // Renamed from stock
-                    sx={{ gridColumn: "span 2" }}
+                    value={values.quantity}
+                    name="quantity"
+                    error={!!touched.quantity && !!errors.quantity}
+                    helperText={touched.quantity && errors.quantity}
+                    sx={{ gridColumn: "span 1" }}
                   />
                   <TextField
                     fullWidth
@@ -533,7 +600,7 @@ export default function Products() {
                     name="min_stock"
                     error={!!touched.min_stock && !!errors.min_stock}
                     helperText={touched.min_stock && errors.min_stock}
-                    sx={{ gridColumn: "span 2" }}
+                    sx={{ gridColumn: "span 1" }}
                   />
                   <TextField
                     fullWidth
@@ -546,7 +613,7 @@ export default function Products() {
                     name="max_stock"
                     error={!!touched.max_stock && !!errors.max_stock}
                     helperText={touched.max_stock && errors.max_stock}
-                    sx={{ gridColumn: "span 2" }}
+                    sx={{ gridColumn: "span 1" }}
                   />
 
                   <FormControl fullWidth variant="filled" sx={{ gridColumn: "span 2" }}>
@@ -609,70 +676,67 @@ export default function Products() {
                     </Select>
                   </FormControl>
                 </Box>
+                <Box display="flex" justifyContent="end" mt="20px">
+                  <Button type="submit" color="secondary" variant="contained">
+                    {editingProduct ? "Actualizar Producto" : "Crear Nuevo Producto"}
+                  </Button>
+                </Box>
               </form>
             )}
           </Formik>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog} color="inherit">Cancelar</Button>
-          <Button type="submit" form="product-form" color="secondary" variant="contained">
-            {editingProduct ? "Guardar Cambios" : "Crear Producto"}
-          </Button>
-        </DialogActions>
       </Dialog>
 
-      {/* Modal de Stock */}
-      <Dialog open={stockDialog.open} onClose={() => setStockDialog(prev => ({ ...prev, open: false }))}>
-        <DialogTitle>{stockDialog.operation === 'add' ? 'Agregar Stock' : 'Restar Stock'}</DialogTitle>
+      {/* Dialog Stock */}
+      <Dialog open={stockDialog.open} onClose={() => setStockDialog({ ...stockDialog, open: false })}>
+        <DialogTitle>
+          {stockDialog.operation === 'add' ? 'Agregar Stock' : 'Restar Stock'} - {stockDialog.productName}
+        </DialogTitle>
         <DialogContent>
-          <Typography variant="body1" gutterBottom>
-            Producto: <strong>{stockDialog.productName}</strong>
-          </Typography>
-          <Typography variant="body2" gutterBottom>
-            Stock Actual: {stockDialog.currentStock}
-          </Typography>
           <TextField
             autoFocus
             margin="dense"
             label="Cantidad"
             type="number"
             fullWidth
-            variant="outlined"
+            variant="standard"
             value={stockDialog.amount}
-            onChange={(e) => setStockDialog(prev => ({ ...prev, amount: Number(e.target.value) }))}
-            inputProps={{ min: 1 }}
+            onChange={(e) => setStockDialog({ ...stockDialog, amount: parseInt(e.target.value) || 0 })}
           />
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setStockDialog(prev => ({ ...prev, open: false }))}>Cancelar</Button>
-          <Button onClick={handleStockConfirm} color="primary" variant="contained">
+        <Box display="flex" justifyContent="end" p={2}>
+          <Button onClick={() => setStockDialog({ ...stockDialog, open: false })} color="inherit" sx={{ mr: 1 }}>
+            Cancelar
+          </Button>
+          <Button onClick={handleStockConfirm} color={stockDialog.operation === 'add' ? "success" : "error"} variant="contained">
             Confirmar
           </Button>
-        </DialogActions>
+        </Box>
       </Dialog>
 
-      {/* Modal de Confirmación de Eliminación */}
-      <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, productId: null, productName: '' })}>
+      {/* Dialog Eliminar */}
+      <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ ...deleteDialog, open: false })}>
         <DialogTitle>Confirmar Eliminación</DialogTitle>
         <DialogContent>
           <Typography>
-            ¿Estás seguro de que deseas eliminar el producto <strong>{deleteDialog.productName}</strong>?
-            Esta acción no se puede deshacer.
+            ¿Estás seguro de que deseas eliminar el producto "{deleteDialog.productName}"?
           </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialog({ open: false, productId: null, productName: '' })}>Cancelar</Button>
+        <Box display="flex" justifyContent="end" p={2}>
+          <Button onClick={() => setDeleteDialog({ ...deleteDialog, open: false })} color="inherit" sx={{ mr: 1 }}>
+            Cancelar
+          </Button>
           <Button onClick={handleDelete} color="error" variant="contained">
             Eliminar
           </Button>
-        </DialogActions>
+        </Box>
       </Dialog>
 
       <AppSnackbar
         open={snackbar.open}
+        onClose={() => setSnackbar((s) => ({ ...s, open: false }))}
         message={snackbar.message}
         severity={snackbar.severity}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
       />
     </Box>
   );

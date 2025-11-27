@@ -1,6 +1,7 @@
 const Controller = require("./Controller");
-const Validator = require("../classes/Validator");
-const Role = require("../models/Role");
+const Validator = require("../classes/validator");
+const Role = require("../models/role");
+const socketManager = require("../classes/socketManager");
 
 class RoleController extends Controller {
     constructor() {
@@ -54,6 +55,10 @@ class RoleController extends Controller {
 
             const roleId = await this.roleModel.createRole(name, permissions);
 
+            // Emit socket event
+            socketManager.emit("role_created", { id: roleId, name, permissions });
+            socketManager.emit("history_updated", {});
+
             return this.sendResponse(res, 201, { id: roleId, role: name }, "Rol creado exitosamente");
         } catch (error) {
             console.error("Error en createRole:", error);
@@ -78,6 +83,10 @@ class RoleController extends Controller {
 
             await this.roleModel.updateRole(id, name, permissions);
 
+            // Emit socket event
+            socketManager.emit("role_updated", { id, name, permissions });
+            socketManager.emit("history_updated", {});
+
             return this.sendResponse(res, 200, { id }, "Rol actualizado exitosamente");
         } catch (error) {
             console.error("Error en updateRole:", error);
@@ -100,6 +109,10 @@ class RoleController extends Controller {
             }
 
             await this.roleModel.deleteRole(id);
+
+            // Emit socket event
+            socketManager.emit("role_deleted", { id });
+            socketManager.emit("history_updated", {});
 
             return this.sendResponse(res, 200, null, "Rol eliminado exitosamente");
         } catch (error) {

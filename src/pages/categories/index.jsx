@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Button,
@@ -33,6 +34,9 @@ import AppSnackbar from "../../components/AppSnackbar";
 import SearchHighlighter from "../../components/SearchHighlighter";
 import { useSearch } from "../../contexts/SearchContext";
 import api from "../../api/axiosClient";
+import { useSocket } from "../../context/SocketContext";
+import usePermission from "../../hooks/usePermission";
+import { flexibleMatch } from "../../utils/searchUtils";
 
 export default function Categories() {
   const theme = useTheme();
@@ -49,6 +53,9 @@ export default function Categories() {
     severity: "success",
   });
 
+  const socket = useSocket();
+  const { can } = usePermission();
+
   // Estado para diálogo de eliminación
   const [deleteDialog, setDeleteDialog] = useState({
     open: false,
@@ -58,6 +65,13 @@ export default function Categories() {
 
   // Contexto de búsqueda
   const { searchTerm, isSearching } = useSearch();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!can('category_read')) {
+      navigate('/');
+    }
+  }, [can, navigate]);
 
   const showSnackbar = (message, severity = "success") => {
     setSnackbar({ open: true, message, severity });
@@ -81,36 +95,31 @@ export default function Categories() {
     }
   }, [showDisabled]);
 
-  const POLL_INTERVAL = 5000;
-
   useEffect(() => {
     fetchCategories();
-    const intervalId = setInterval(() => fetchCategories({ silent: true }), POLL_INTERVAL);
-    return () => clearInterval(intervalId);
   }, [fetchCategories]);
 
-  // Escuchar eventos de otras ventanas/pestañas
+  // Escuchar eventos de Socket.io
   useEffect(() => {
-    const handleReload = () => fetchCategories({ silent: true });
+    if (!socket) return;
 
-    window.addEventListener("categoryCreated", handleReload);
-    window.addEventListener("categoryUpdated", handleReload);
-    window.addEventListener("categoryDeleted", handleReload);
-    window.addEventListener("categoryStatusChanged", handleReload);
-
-    const handleStorageChange = (e) => {
-      if (e.key === 'categoryChanged') handleReload();
+    const handleCategoryUpdate = (data) => {
+      console.log('🔔 Category update received:', data);
+      fetchCategories({ silent: true });
     };
-    window.addEventListener("storage", handleStorageChange);
+
+    socket.on('category_created', handleCategoryUpdate);
+    socket.on('category_updated', handleCategoryUpdate);
+    socket.on('category_deleted', handleCategoryUpdate);
+    socket.on('category_status_changed', handleCategoryUpdate);
 
     return () => {
-      window.removeEventListener("categoryCreated", handleReload);
-      window.removeEventListener("categoryUpdated", handleReload);
-      window.removeEventListener("categoryDeleted", handleReload);
-      window.removeEventListener("categoryStatusChanged", handleReload);
-      window.removeEventListener("storage", handleStorageChange);
+      socket.off('category_created', handleCategoryUpdate);
+      socket.off('category_updated', handleCategoryUpdate);
+      socket.off('category_deleted', handleCategoryUpdate);
+      socket.off('category_status_changed', handleCategoryUpdate);
     };
-  }, [fetchCategories]);
+  }, [socket, fetchCategories]);
 
   // Filtro de categorías con búsqueda
   const filteredCategories = useMemo(() => {
@@ -121,11 +130,8 @@ export default function Categories() {
     }
 
     return categories.filter((category) => {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        category.name?.toLowerCase().includes(searchLower) ||
-        category.description?.toLowerCase().includes(searchLower)
-      );
+      const searchableText = `${category.name} ${category.description}`;
+      return flexibleMatch(searchableText, searchTerm);
     });
   }, [categories, isSearching, searchTerm]);
 
@@ -156,17 +162,13 @@ export default function Categories() {
       if (editingCategory) {
         await api.put(`/api/categories/${editingCategory.id}`, formData);
         showSnackbar("Categoría actualizada exitosamente");
-        window.dispatchEvent(new Event("categoryUpdated"));
-        localStorage.setItem('categoryChanged', Date.now().toString());
       } else {
         await api.post("/api/categories", formData);
         showSnackbar("Categoría creada exitosamente");
-        window.dispatchEvent(new Event("categoryCreated"));
-        localStorage.setItem('categoryChanged', Date.now().toString());
       }
 
       handleClose();
-      fetchCategories();
+      // fetchCategories(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al procesar la solicitud";
       showSnackbar(message, "error");
@@ -185,9 +187,7 @@ export default function Categories() {
     try {
       await api.delete(`/api/categories/${deleteDialog.categoryId}`);
       showSnackbar("Categoría eliminada exitosamente");
-      window.dispatchEvent(new Event("categoryDeleted"));
-      localStorage.setItem('categoryChanged', Date.now().toString());
-      fetchCategories();
+      // fetchCategories(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al eliminar la categoría";
       showSnackbar(message, "error");
@@ -204,9 +204,7 @@ export default function Categories() {
     try {
       await api.put(`/api/categories/${id}/enable`);
       showSnackbar(`Categoría "${name}" rehabilitada exitosamente`);
-      window.dispatchEvent(new Event("categoryStatusChanged"));
-      localStorage.setItem('categoryChanged', Date.now().toString());
-      fetchCategories();
+      // fetchCategories(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al rehabilitar la categoría";
       showSnackbar(message, "error");
@@ -249,15 +247,17 @@ export default function Categories() {
         {showDisabled ? "Ocultar Deshabilitadas" : "Mostrar Deshabilitadas"}
       </Button>
 
-      <Button
-        variant="contained"
-        color="secondary"
-        startIcon={<AddIcon />}
-        onClick={() => handleOpen()}
-        sx={{ px: 3, py: 1.5 }}
-      >
-        Nueva Categoría
-      </Button>
+      {can('category_create') && (
+        <Button
+          variant="contained"
+          color="secondary"
+          startIcon={<AddIcon />}
+          onClick={() => handleOpen()}
+          sx={{ px: 3, py: 1.5 }}
+        >
+          Nueva Categoría
+        </Button>
+      )}
     </Box>
 
     <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
@@ -358,31 +358,38 @@ export default function Categories() {
           <TableCell align="center">
             {category.status === 0 ? (
               <>
-                <IconButton
-                  onClick={() => handleOpen(category)}
-                  color="warning"
-                  size="small"
-                  sx={{ mr: 1 }}
-                >
-                  <EditIcon />
-                </IconButton>
-                <IconButton
-                  onClick={() => handleDelete(category.id, category.name)}
-                  color="error"
-                  size="small"
-                >
-                  <DeleteIcon />
-                </IconButton>
+                {can('category_update') && (
+                  <IconButton
+                    onClick={() => handleOpen(category)}
+                    color="warning"
+                    size="small"
+                    sx={{ mr: 1 }}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                )}
+                {can('category_delete') && (
+                  <IconButton
+                    onClick={() => handleDelete(category.id, category.name)}
+                    color="error"
+                    size="small"
+                    sx={{ mr: 1 }}
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                )}
               </>
             ) : (
-              <IconButton
-                onClick={() => handleEnable(category.id, category.name)}
-                color="success"
-                size="small"
-                title="Rehabilitar categoría"
-              >
-                <RestoreIcon />
-              </IconButton>
+              can('category_update') && (
+                <IconButton
+                  onClick={() => handleEnable(category.id, category.name)}
+                  color="success"
+                  size="small"
+                  title="Rehabilitar categoría"
+                >
+                  <RestoreIcon />
+                </IconButton>
+              )
             )}
           </TableCell>
         </TableRow>

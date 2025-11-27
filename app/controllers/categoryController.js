@@ -1,7 +1,8 @@
 const Controller = require('./Controller');
 const Category = require('../models/category');
 const History = require('../models/history');
-const Validator = require('../classes/Validator');
+const Validator = require('../classes/validator');
+const socketManager = require('../classes/socketManager');
 
 class CategoryController extends Controller {
   constructor() {
@@ -45,6 +46,10 @@ class CategoryController extends Controller {
       };
 
       const result = await this.categoryModel.createCategory(categoryData);
+
+      // Emit socket event
+      socketManager.emit('category_created', { id: result.insertId, ...categoryData });
+      socketManager.emit('history_updated', {});
 
       await this.historyModel.registerLog({
         action_type: 'Categoría Creada',
@@ -92,6 +97,10 @@ class CategoryController extends Controller {
 
       await this.categoryModel.updateCategory(id, categoryData);
 
+      // Emit socket event
+      socketManager.emit('category_updated', { id, ...categoryData });
+      socketManager.emit('history_updated', {});
+
       await this.historyModel.registerLog({
         action_type: 'Categoría Actualizada',
         performed_by: req.user.id,
@@ -119,6 +128,10 @@ class CategoryController extends Controller {
       }
 
       await this.categoryModel.deleteCategory(id);
+
+      // Emit socket event
+      socketManager.emit('category_deleted', { id });
+      socketManager.emit('history_updated', {});
 
       await this.historyModel.registerLog({
         action_type: 'Categoría Eliminada',
@@ -178,6 +191,10 @@ class CategoryController extends Controller {
       }
 
       await this.categoryModel.enableCategory(id);
+
+      // Emit socket event
+      socketManager.emit('category_updated', { id, status: 0 });
+      socketManager.emit('history_updated', {});
 
       await this.historyModel.registerLog({
         action_type: 'Categoría Rehabilitada',
