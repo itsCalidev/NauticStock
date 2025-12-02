@@ -101,6 +101,66 @@ export const generateDashboardReport = (data) => {
             headStyles: { fillColor: [243, 156, 18], textColor: 255 }, // Orange for pending
             styles: { fontSize: 9 },
         });
+
+        yPos = doc.lastAutoTable.finalY + 15;
+    }
+
+    // Top Providers Table
+    if (data.topProviders && data.topProviders.length > 0) {
+        // Check page break
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+        }
+
+        doc.setFontSize(14);
+        doc.text("Top 5 Proveedores por Volumen", 14, yPos);
+        yPos += 6;
+
+        const providerRows = data.topProviders.map(item => [
+            item.provider,
+            item.orders
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Proveedor', 'Total Órdenes']],
+            body: providerRows,
+            theme: 'striped',
+            headStyles: { fillColor: [142, 68, 173], textColor: 255 },
+            styles: { fontSize: 9 },
+        });
+
+        yPos = doc.lastAutoTable.finalY + 15;
+    }
+
+    // Inventory Value Table
+    if (data.stockValueByCategory && data.stockValueByCategory.length > 0) {
+        // Check page break
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+        }
+
+        doc.setFontSize(14);
+        doc.text("Valor de Inventario (Top Categorías)", 14, yPos);
+        yPos += 6;
+
+        const valueRows = data.stockValueByCategory.map(item => [
+            item.category,
+            `$${item.value.toLocaleString()}`
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Categoría', 'Valor Estimado']],
+            body: valueRows,
+            theme: 'striped',
+            headStyles: { fillColor: [46, 204, 113], textColor: 255 },
+            styles: { fontSize: 9 },
+        });
+
+        yPos = doc.lastAutoTable.finalY + 15;
     }
 
     // Footer

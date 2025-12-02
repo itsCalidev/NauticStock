@@ -378,42 +378,41 @@ export default function Team() {
           </Typography>
         </Box>
 
-      </Box>
-
-      <Box display="flex" gap={2}>
-        <Button
-          variant="contained"
-          color="success"
-          startIcon={<FileDownloadIcon />}
-          onClick={() => exportToExcel(filteredUsers.map(u => ({
-            Nombre: u.name,
-            Email: u.email,
-            Matrícula: u.matricula,
-            Grado: u.grado,
-            Acceso: u.access,
-            Estado: u.status === 0 ? 'Activo' : 'Inactivo',
-            'Último Acceso': u.lastAccess ? new Date(u.lastAccess).toLocaleString() : 'Nunca'
-          })), 'Equipo_Usuarios')}
-          sx={{ fontWeight: 'bold' }}
-        >
-          Exportar Excel
-        </Button>
-        {/* Botón Crear Usuario */}
-        {can('user_create') && (
+        <Box display="flex" gap={2}>
           <Button
             variant="contained"
-            color="secondary"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-            sx={{
-              px: 3,
-              py: 1.5,
-              fontWeight: 'bold'
-            }}
+            color="success"
+            startIcon={<FileDownloadIcon />}
+            onClick={() => exportToExcel(filteredUsers.map(u => ({
+              Nombre: u.name,
+              Email: u.email,
+              Matrícula: u.matricula,
+              Grado: u.grado,
+              Acceso: u.access,
+              Estado: u.status === 0 ? 'Activo' : 'Inactivo',
+              'Último Acceso': u.lastAccess ? new Date(u.lastAccess).toLocaleString() : 'Nunca'
+            })), 'Equipo_Usuarios')}
+            sx={{ fontWeight: 'bold' }}
           >
-            Crear Usuario
+            Exportar Excel
           </Button>
-        )}
+          {/* Botón Crear Usuario */}
+          {can('user_create') && (
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog()}
+              sx={{
+                px: 3,
+                py: 1.5,
+                fontWeight: 'bold'
+              }}
+            >
+              Crear Usuario
+            </Button>
+          )}
+        </Box>
       </Box>
 
 
@@ -499,7 +498,13 @@ export default function Team() {
                       </Tooltip>
                       {can('user_delete') && isActive && (
                         <Tooltip title="Eliminar usuario">
-                          <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, userId: row.id, userName: row.name })}>
+                          <IconButton size="small" color="error" onClick={() => {
+                            if (row.roleId && row.rankId) {
+                              setSnackbar({ open: true, message: "No se puede eliminar un usuario con rol y rango asignados. Deshabilítelo en su lugar.", severity: "warning" });
+                              return;
+                            }
+                            setDeleteDialog({ open: true, userId: row.id, userName: row.name });
+                          }}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>

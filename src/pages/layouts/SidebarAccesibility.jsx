@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ProSidebar, Menu, MenuItem } from "react-pro-sidebar";
-import { Box, IconButton, Typography, Button } from "@mui/material";
+import { Box, IconButton, Typography, Button, useTheme } from "@mui/material";
 import "react-pro-sidebar/dist/css/styles.css";
 
 // Import Local Font
 import OpenDyslexicFont from '../../assets/fonts/OpenDyslexic-Regular.otf';
+import { Token } from "../../theme";
 
 
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -32,10 +33,18 @@ const AccessibilitySidebar = () => {
     const maskTopRef = useRef(null);
     const maskBottomRef = useRef(null);
 
-    // SEMAR Colors
-    const SEMAR_MAROON = "#9d2449";
-    const SEMAR_GRAY_BG = "#f5f5f5";
-    const SEMAR_TEXT = "#9d2449";
+    // Theme Context
+    const theme = useTheme();
+    const colors = Token(theme.palette.mode);
+
+    // Dynamic Colors based on Theme (Matching Main Sidebar)
+    const sidebarBg = colors.primary[400];
+    const sidebarText = colors.grey[100];
+    const sidebarIconColor = colors.grey[100];
+    const sidebarHoverBg = "transparent"; // Main sidebar uses transparent hover bg for items
+    const sidebarHoverText = "#868dfb"; // Main sidebar hover color
+
+
 
     // --- ESTADO CON PERSISTENCIA ---
     const getStoredState = (key, defaultValue) => {
@@ -168,7 +177,7 @@ const AccessibilitySidebar = () => {
                     utterance.rate = 1.0; // Velocidad normal
 
                     // Opcional: Resaltar visualmente lo que se lee
-                    elementToRead.style.outline = '2px solid #9d2449';
+                    elementToRead.style.outline = `2px solid ${colors.greenAccent[500]}`;
 
                     window.speechSynthesis.speak(utterance);
 
@@ -213,7 +222,7 @@ const AccessibilitySidebar = () => {
     }, [
         fontScale, isDyslexiaFont, isMarinaMode, isHighContrast, isGrayscale,
         isCursorChanged, hideImages, highlightLinks, textSpacingVertical,
-        textSpacingHorizontal, readingGuide, readingMask, screenReader
+        textSpacingHorizontal, readingGuide, readingMask, screenReader, colors
     ]);
 
     // 3. Cerrar con tecla ESC
@@ -294,7 +303,7 @@ const AccessibilitySidebar = () => {
                     sx={{
                         width: 6,
                         height: 16,
-                        backgroundColor: i <= level ? SEMAR_MAROON : "#ccc",
+                        backgroundColor: i <= level ? colors.greenAccent[500] : colors.grey[700],
                         borderRadius: 1,
                         transition: "background-color 0.2s"
                     }}
@@ -302,6 +311,13 @@ const AccessibilitySidebar = () => {
             ))}
         </Box>
     );
+
+
+
+    // For the toggle button, we can keep it distinct or match the header
+    // Let's keep it SEMAR_MAROON for visibility as it's a floating action button equivalent
+    // But maybe the user wants it to blend in? The request is about the "menu colors".
+    // Let's stick to the menu content matching the main sidebar.
 
     return (
         <>
@@ -366,14 +382,14 @@ const AccessibilitySidebar = () => {
                     position: "fixed",
                     bottom: 60,
                     right: 20,
-                    backgroundColor: SEMAR_MAROON,
+                    backgroundColor: colors.greenAccent[500],
                     color: "#fff",
                     width: 56,
                     height: 56,
                     zIndex: 2000,
                     boxShadow: 3,
                     "&:hover": {
-                        backgroundColor: "#7a1c38", // Darker maroon
+                        backgroundColor: colors.greenAccent[600],
                     },
                     "&:focus": {
                         outline: "3px solid #fff",
@@ -405,35 +421,35 @@ const AccessibilitySidebar = () => {
                     transition: "transform 0.3s ease-in-out",
                     boxShadow: isOpen ? 4 : 0,
                     pointerEvents: isOpen ? "auto" : "none",
-                    backgroundColor: SEMAR_GRAY_BG,
+                    backgroundColor: sidebarBg,
                     "& .pro-sidebar-inner": {
-                        background: `${SEMAR_GRAY_BG} !important`,
+                        background: `${sidebarBg} !important`,
                     },
                     "& .pro-icon-wrapper": {
                         backgroundColor: "transparent !important",
-                        color: `${SEMAR_MAROON} !important`,
+                        color: `${sidebarIconColor} !important`,
                     },
                     "& .pro-inner-item": {
                         padding: "10px 20px !important",
-                        color: `${SEMAR_TEXT} !important`,
+                        color: `${sidebarText} !important`,
                         fontWeight: "500 !important",
                     },
                     "& .pro-inner-item:hover": {
-                        color: "#000 !important",
-                        backgroundColor: "rgba(157, 36, 73, 0.1) !important", // Light maroon tint
+                        color: `${sidebarHoverText} !important`,
+                        backgroundColor: `${sidebarHoverBg} !important`,
                     },
                     "& .pro-menu-item.active": {
-                        color: `${SEMAR_MAROON} !important`,
+                        color: `${sidebarIconColor} !important`,
                     },
                 }}
             >
                 <ProSidebar collapsed={false}>
-                    <Box p={2} display="flex" justifyContent="space-between" alignItems="center" borderBottom={`1px solid ${SEMAR_MAROON}`}>
-                        <Typography variant="h5" color={SEMAR_MAROON} fontWeight="bold">
+                    <Box p={2} display="flex" justifyContent="space-between" alignItems="center" borderBottom={`1px solid ${colors.grey[800]}`}>
+                        <Typography variant="h5" color={colors.grey[100]} fontWeight="bold">
                             Accesibilidad
                         </Typography>
                         <IconButton onClick={() => setIsOpen(false)} size="small">
-                            <SettingsIcon sx={{ color: SEMAR_MAROON }} />
+                            <SettingsIcon sx={{ color: colors.grey[100] }} />
                         </IconButton>
                     </Box>
 
@@ -444,9 +460,9 @@ const AccessibilitySidebar = () => {
                             startIcon={<RestartAltIcon />}
                             onClick={resetStyles}
                             sx={{
-                                backgroundColor: SEMAR_MAROON,
+                                backgroundColor: colors.blueAccent[600],
                                 color: "white",
-                                "&:hover": { backgroundColor: "#7a1c38" }
+                                "&:hover": { backgroundColor: colors.blueAccent[700] }
                             }}
                         >
                             Restablecer
@@ -454,6 +470,28 @@ const AccessibilitySidebar = () => {
                     </Box>
 
                     <Menu iconShape="square">
+                        {/* 10. Cambiar tamaño (Font Size) - MOVED TO TOP */}
+                        <Box display="flex" justifyContent="center" gap={1} my={1} px={3}>
+                            <Button
+                                variant="contained"
+                                size="small"
+                                onClick={decreaseFont}
+                                sx={{ backgroundColor: colors.blueAccent[600], minWidth: '40px', "&:hover": { backgroundColor: colors.blueAccent[700] } }}
+                            >
+                                <ZoomOutIcon fontSize="small" />
+                            </Button>
+                            <Typography variant="body2" color={sidebarText} alignSelf="center">
+                                Tamaño
+                            </Typography>
+                            <Button
+                                variant="contained"
+                                size="small"
+                                onClick={increaseFont}
+                                sx={{ backgroundColor: colors.blueAccent[600], minWidth: '40px', "&:hover": { backgroundColor: colors.blueAccent[700] } }}
+                            >
+                                <ZoomInIcon fontSize="small" />
+                            </Button>
+                        </Box>
                         {/* 1. Cambiar escala de grises */}
                         <MenuItem
                             icon={<ContrastIcon />}
@@ -541,28 +579,7 @@ const AccessibilitySidebar = () => {
                             </Box>
                         </MenuItem>
 
-                        {/* 10. Cambiar tamaño (Font Size) */}
-                        <Box display="flex" justifyContent="center" gap={1} my={1} px={3}>
-                            <Button
-                                variant="contained"
-                                size="small"
-                                onClick={decreaseFont}
-                                sx={{ backgroundColor: SEMAR_MAROON, minWidth: '40px' }}
-                            >
-                                <ZoomOutIcon fontSize="small" />
-                            </Button>
-                            <Typography variant="body2" color={SEMAR_MAROON} alignSelf="center">
-                                Tamaño
-                            </Typography>
-                            <Button
-                                variant="contained"
-                                size="small"
-                                onClick={increaseFont}
-                                sx={{ backgroundColor: SEMAR_MAROON, minWidth: '40px' }}
-                            >
-                                <ZoomInIcon fontSize="small" />
-                            </Button>
-                        </Box>
+
 
                         {/* 11. Resaltar Enlaces */}
                         <MenuItem

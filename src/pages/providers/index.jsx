@@ -223,26 +223,50 @@ export default function Providers() {
       }
 
       handleClose();
-      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al procesar la solicitud";
       showSnackbar(message, "error");
     }
   };
 
-  const handleDelete = (id, name) => {
-    setDeleteDialog({
-      open: true,
-      providerId: id,
-      providerName: name
-    });
+  const handleDelete = async (id, name) => {
+    try {
+      // Verificar productos asociados
+      const productsRes = await api.get('/api/products');
+      const products = productsRes.data.data || [];
+      const hasProducts = products.some(p => p.provider_id === id);
+
+      if (hasProducts) {
+        showSnackbar(`No se puede eliminar el proveedor "${name}" porque tiene productos asociados.`, "error");
+        return;
+      }
+
+      // Verificar órdenes activas
+      const ordersRes = await api.get('/api/orders');
+      const orders = ordersRes.data.data || [];
+      const activeOrders = orders.filter(o => o.status === 'pending' || o.status === 'processing');
+      const hasActiveOrders = activeOrders.some(o => o.provider_id === id);
+
+      if (hasActiveOrders) {
+        showSnackbar(`No se puede eliminar el proveedor "${name}" porque tiene órdenes activas.`, "error");
+        return;
+      }
+
+      setDeleteDialog({
+        open: true,
+        providerId: id,
+        providerName: name
+      });
+    } catch (error) {
+      console.error("Error checking dependencies:", error);
+      showSnackbar("Error al verificar dependencias", "error");
+    }
   };
 
   const confirmDelete = async () => {
     try {
       await api.delete(`/api/providers/${deleteDialog.providerId}`);
       showSnackbar("Proveedor eliminado exitosamente");
-      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al eliminar el proveedor";
       showSnackbar(message, "error");
@@ -260,7 +284,6 @@ export default function Providers() {
       await api.put(`/api/providers/${id}/status`);
       const action = currentStatus === 0 ? "deshabilitado" : "habilitado";
       showSnackbar(`Proveedor ${name} ${action} exitosamente`);
-      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al cambiar estado";
       showSnackbar(message, "error");
