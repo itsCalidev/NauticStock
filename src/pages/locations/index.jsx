@@ -175,12 +175,27 @@ export default function Locations() {
       showSnackbar(message, "error");
     }
   };
-  const handleDelete = (id, name) => {
-    setDeleteDialog({
-      open: true,
-      locationId: id,
-      locationName: name
-    });
+  const handleDelete = async (id, name) => {
+    try {
+      // Verificar productos asociados
+      const productsRes = await api.get('/api/products');
+      const products = productsRes.data.data || [];
+      const hasProducts = products.some(p => p.location_id === id);
+
+      if (hasProducts) {
+        showSnackbar(`No se puede eliminar la ubicación "${name}" porque tiene productos asociados.`, "error");
+        return;
+      }
+
+      setDeleteDialog({
+        open: true,
+        locationId: id,
+        locationName: name
+      });
+    } catch (error) {
+      console.error("Error checking dependencies:", error);
+      showSnackbar("Error al verificar dependencias", "error");
+    }
   };
 
   const confirmDelete = async () => {

@@ -264,7 +264,7 @@ export default function Products() {
     }
   }, []);
 
-  const handleDelete = async () => {
+  const confirmDelete = async () => {
     try {
       await api.delete(`/api/products/${deleteDialog.productId}`);
       setSnackbar({ open: true, message: "Producto eliminado exitosamente", severity: "success" });
@@ -272,6 +272,25 @@ export default function Products() {
     } catch (err) {
       console.error('Error eliminando producto:', err);
       setSnackbar({ open: true, message: "Error al eliminar producto", severity: "error" });
+    }
+  };
+
+  const handleDeleteClick = async (product) => {
+    try {
+      const response = await api.get('/api/orders');
+      const orders = Array.isArray(response.data) ? response.data : response.data.data || [];
+      const activeOrders = orders.filter(o => o.status === 'pending' || o.status === 'processing');
+      const hasActiveOrders = activeOrders.some(o => o.product_id === product.id);
+
+      if (hasActiveOrders) {
+        setSnackbar({ open: true, message: `No se puede eliminar "${product.name}" porque tiene órdenes activas.`, severity: "error" });
+        return;
+      }
+
+      setDeleteDialog({ open: true, productId: product.id, productName: product.name });
+    } catch (err) {
+      console.error('Error checking dependencies:', err);
+      setSnackbar({ open: true, message: "Error al verificar dependencias", severity: "error" });
     }
   };
 
@@ -493,7 +512,7 @@ export default function Products() {
 
                       {can('product_delete') && isActive && (
                         <Tooltip title="Eliminar producto">
-                          <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, productId: product.id, productName: product.name })}>
+                          <IconButton size="small" color="error" onClick={() => handleDeleteClick(product)}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -655,7 +674,7 @@ export default function Products() {
                       name="providerId"
                       error={!!touched.providerId && !!errors.providerId}
                     >
-                      {providers.map((prov) => (
+                      {providers.filter(p => p.status === 0).map((prov) => (
                         <MenuItem key={prov.id} value={prov.id}>{prov.name}</MenuItem>
                       ))}
                     </Select>
@@ -726,7 +745,7 @@ export default function Products() {
           <Button onClick={() => setDeleteDialog({ ...deleteDialog, open: false })} color="inherit" sx={{ mr: 1 }}>
             Cancelar
           </Button>
-          <Button onClick={handleDelete} color="error" variant="contained">
+          <Button onClick={confirmDelete} color="error" variant="contained">
             Eliminar
           </Button>
         </Box>

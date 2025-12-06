@@ -77,29 +77,40 @@ const Reports = () => {
         if (!can('report_view')) {
             navigate('/');
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [can, navigate]);
 
     useEffect(() => {
+        let mounted = true;
+
         const fetchData = async () => {
             try {
-                setLoading(true);
+                if (mounted) setLoading(true);
                 const [prodRes, ordRes] = await Promise.all([
                     api.get('/api/products'),
                     api.get('/api/orders')
                 ]);
 
-                setProducts(prodRes.data.data || []);
-                setOrders(Array.isArray(ordRes.data) ? ordRes.data : ordRes.data?.data || []);
+                if (mounted) {
+                    setProducts(prodRes.data.data || []);
+                    setOrders(Array.isArray(ordRes.data) ? ordRes.data : ordRes.data?.data || []);
+                }
             } catch (error) {
                 console.error("Error fetching report data:", error);
             } finally {
-                setLoading(false);
+                if (mounted) setLoading(false);
             }
         };
 
         if (can('report_view')) {
             fetchData();
+        } else {
+            setLoading(false);
         }
+
+        return () => {
+            mounted = false;
+        };
     }, [can]);
 
     // --- DATA PROCESSING ---
@@ -155,6 +166,11 @@ const Reports = () => {
             .sort((a, b) => (a.quantity || 0) - (b.quantity || 0)) // Ascending by stock
             .slice(0, 10); // Top 10 critical
     }, [products]);
+
+    // Pending Orders List
+    const pendingOrdersList = useMemo(() => {
+        return orders.filter(o => o.status === 'pending');
+    }, [orders]);
 
     // Charts Data
     const productsByCategory = useMemo(() => {
@@ -221,7 +237,9 @@ const Reports = () => {
         const data = {
             kpiData,
             lowStockItems,
-            ordersByStatus
+            pendingOrders: pendingOrdersList,
+            topProviders,
+            stockValueByCategory
         };
         generateDashboardReport(data);
     };
@@ -258,186 +276,8 @@ const Reports = () => {
                 ))}
             </Grid>
 
-            <Grid container spacing={3}>
-                {/* ROW 1: Inventory Value (Full Width) */}
-                <Grid item xs={12}>
-                    <Paper sx={{ p: 2, height: "500px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
-                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Valor de Inventario (Top 10 Categorías)</Typography>
-                        <ResponsiveBar
-                            data={stockValueByCategory}
-                            keys={['value']}
-                            indexBy="category"
-                            layout="horizontal"
-                            theme={{
-                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
-                                legends: { text: { fill: colors.grey[100] } },
-                                tooltip: { container: { color: colors.primary[500] } }
-                            }}
-                            margin={{ top: 20, right: 50, bottom: 50, left: 150 }}
-                            padding={0.3}
-                            valueScale={{ type: 'linear' }}
-                            indexScale={{ type: 'band', round: true }}
-                            colors={{ scheme: 'nivo' }}
-                            axisBottom={{
-                                tickSize: 5,
-                                tickPadding: 5,
-                                tickRotation: 0,
-                                legend: 'Valor ($)',
-                                legendPosition: 'middle',
-                                legendOffset: 40,
-                                format: value => `$${value.toLocaleString()}`
-                            }}
-                            axisLeft={{
-                                tickSize: 5,
-                                tickPadding: 5,
-                                tickRotation: 0,
-                                legend: '',
-                                legendPosition: 'middle',
-                                legendOffset: -80
-                            }}
-                            enableLabel={true}
-                            labelSkipWidth={12}
-                            labelSkipHeight={12}
-                            labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
-                        />
-                    </Paper>
-                </Grid>
-
-                {/* ROW 2: Pie Charts (Side by Side) */}
-                <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 2, height: "500px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
-                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Productos por Categoría</Typography>
-                        <ResponsivePie
-                            data={productsByCategory}
-                            theme={{
-                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
-                                legends: { text: { fill: colors.grey[100] } },
-                                tooltip: { container: { color: colors.primary[500] } }
-                            }}
-                            margin={{ top: 40, right: 80, bottom: 100, left: 80 }}
-                            innerRadius={0.5}
-                            padAngle={0.7}
-                            cornerRadius={3}
-                            activeOuterRadiusOffset={8}
-                            colors={{ scheme: 'nivo' }}
-                            borderWidth={1}
-                            borderColor={{ from: 'color', modifiers: [['darker', 0.2]] }}
-                            arcLinkLabelsSkipAngle={10}
-                            arcLinkLabelsTextColor={colors.grey[100]}
-                            arcLinkLabelsThickness={2}
-                            arcLinkLabelsColor={{ from: 'color' }}
-                            enableArcLabels={false}
-                            legends={[
-                                {
-                                    anchor: 'bottom',
-                                    direction: 'row',
-                                    justify: false,
-                                    translateX: 0,
-                                    translateY: 70,
-                                    itemsSpacing: 10,
-                                    itemWidth: 90,
-                                    itemHeight: 18,
-                                    itemTextColor: '#999',
-                                    itemDirection: 'left-to-right',
-                                    itemOpacity: 1,
-                                    symbolSize: 12,
-                                    symbolShape: 'circle',
-                                }
-                            ]}
-                        />
-                    </Paper>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 2, height: "500px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
-                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Estado de Órdenes</Typography>
-                        <ResponsivePie
-                            data={ordersByStatus}
-                            theme={{
-                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
-                                legends: { text: { fill: colors.grey[100] } },
-                                tooltip: { container: { color: colors.primary[500] } }
-                            }}
-                            margin={{ top: 40, right: 80, bottom: 100, left: 80 }}
-                            innerRadius={0.5}
-                            padAngle={0.7}
-                            cornerRadius={3}
-                            activeOuterRadiusOffset={8}
-                            colors={{ scheme: 'set3' }}
-                            borderWidth={1}
-                            borderColor={{ from: 'color', modifiers: [['darker', 0.2]] }}
-                            arcLinkLabelsSkipAngle={10}
-                            arcLinkLabelsTextColor={colors.grey[100]}
-                            arcLinkLabelsThickness={2}
-                            arcLinkLabelsColor={{ from: 'color' }}
-                            enableArcLabels={true}
-                            arcLabelsSkipAngle={10}
-                            arcLabelsTextColor={{ from: 'color', modifiers: [['darker', 2]] }}
-                            legends={[
-                                {
-                                    anchor: 'bottom',
-                                    direction: 'row',
-                                    justify: false,
-                                    translateX: 0,
-                                    translateY: 70,
-                                    itemsSpacing: 10,
-                                    itemWidth: 90,
-                                    itemHeight: 18,
-                                    itemTextColor: '#999',
-                                    itemDirection: 'left-to-right',
-                                    itemOpacity: 1,
-                                    symbolSize: 12,
-                                    symbolShape: 'circle',
-                                }
-                            ]}
-                        />
-                    </Paper>
-                </Grid>
-
-                {/* ROW 3: Top Providers (Full Width) */}
-                <Grid item xs={12}>
-                    <Paper sx={{ p: 2, height: "500px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
-                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Top 5 Proveedores por Volumen</Typography>
-                        <ResponsiveBar
-                            data={topProviders}
-                            keys={['orders']}
-                            indexBy="provider"
-                            layout="horizontal"
-                            theme={{
-                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
-                                legends: { text: { fill: colors.grey[100] } },
-                                tooltip: { container: { color: colors.primary[500] } }
-                            }}
-                            margin={{ top: 20, right: 50, bottom: 50, left: 150 }}
-                            padding={0.3}
-                            valueScale={{ type: 'linear' }}
-                            indexScale={{ type: 'band', round: true }}
-                            colors={{ scheme: 'accent' }}
-                            axisBottom={{
-                                tickSize: 5,
-                                tickPadding: 5,
-                                tickRotation: 0,
-                                legend: 'Órdenes',
-                                legendPosition: 'middle',
-                                legendOffset: 40
-                            }}
-                            axisLeft={{
-                                tickSize: 5,
-                                tickPadding: 5,
-                                tickRotation: 0,
-                                legend: '',
-                                legendPosition: 'middle',
-                                legendOffset: -80
-                            }}
-                            enableLabel={true}
-                            labelSkipWidth={12}
-                            labelSkipHeight={12}
-                            labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
-                        />
-                    </Paper>
-                </Grid>
-
-                {/* ROW 4: Low Stock Table (Full Width) */}
+            {/* LOW STOCK TABLE */}
+            <Grid container spacing={3} mb={3}>
                 <Grid item xs={12}>
                     <Paper sx={{ p: 2, bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3, overflow: 'auto' }}>
                         <Box display="flex" alignItems="center" gap={1} mb={2}>
@@ -486,6 +326,202 @@ const Reports = () => {
                                 </TableBody>
                             </Table>
                         </TableContainer>
+                    </Paper>
+                </Grid>
+            </Grid>
+
+            {/* CHARTS GRID */}
+            <Grid container spacing={3}>
+                {/* Inventory Value */}
+                <Grid item xs={12} md={6}>
+                    <Paper sx={{ p: 2, height: "450px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
+                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Valor de Inventario (Top 10 Categorías)</Typography>
+                        <ResponsiveBar
+                            data={stockValueByCategory}
+                            keys={['value']}
+                            indexBy="category"
+                            layout="vertical"
+                            theme={{
+                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
+                                legends: { text: { fill: colors.grey[100] } },
+                                tooltip: { container: { color: "#000" } }
+                            }}
+                            margin={{ top: 20, right: 30, bottom: 100, left: 80 }}
+                            padding={0.3}
+                            valueScale={{ type: 'linear' }}
+                            indexScale={{ type: 'band', round: true }}
+                            colors={{ scheme: 'spectral' }}
+                            borderRadius={4}
+                            borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+                            axisBottom={{
+                                tickSize: 5,
+                                tickPadding: 5,
+                                tickRotation: -45,
+                                legend: 'Categoría',
+                                legendPosition: 'middle',
+                                legendOffset: 80
+                            }}
+                            axisLeft={{
+                                tickSize: 5,
+                                tickPadding: 5,
+                                tickRotation: 0,
+                                legend: 'Valor ($)',
+                                legendPosition: 'middle',
+                                legendOffset: -60,
+                                format: value => `$${value.toLocaleString()}`
+                            }}
+                            enableGridY={true}
+                            enableGridX={false}
+                            enableLabel={true}
+                            labelSkipWidth={12}
+                            labelSkipHeight={12}
+                            labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+                            role="application"
+                            ariaLabel="Gráfico de barras de valor de inventario por categoría"
+                        />
+                    </Paper>
+                </Grid>
+
+                {/* Top Providers */}
+                <Grid item xs={12} md={6}>
+                    <Paper sx={{ p: 2, height: "450px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
+                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Top 5 Proveedores por Volumen</Typography>
+                        <ResponsiveBar
+                            data={topProviders}
+                            keys={['orders']}
+                            indexBy="provider"
+                            layout="vertical"
+                            theme={{
+                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
+                                legends: { text: { fill: colors.grey[100] } },
+                                tooltip: { container: { color: "#000" } }
+                            }}
+                            margin={{ top: 20, right: 30, bottom: 100, left: 60 }}
+                            padding={0.3}
+                            valueScale={{ type: 'linear' }}
+                            indexScale={{ type: 'band', round: true }}
+                            colors={{ scheme: 'dark2' }}
+                            borderRadius={4}
+                            borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+                            axisBottom={{
+                                tickSize: 5,
+                                tickPadding: 5,
+                                tickRotation: -45,
+                                legend: 'Proveedor',
+                                legendPosition: 'middle',
+                                legendOffset: 80
+                            }}
+                            axisLeft={{
+                                tickSize: 5,
+                                tickPadding: 5,
+                                tickRotation: 0,
+                                legend: 'Órdenes',
+                                legendPosition: 'middle',
+                                legendOffset: -50
+                            }}
+                            enableGridY={true}
+                            enableGridX={false}
+                            enableLabel={true}
+                            labelSkipWidth={12}
+                            labelSkipHeight={12}
+                            labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+                            role="application"
+                            ariaLabel="Gráfico de barras de top proveedores"
+                        />
+                    </Paper>
+                </Grid>
+
+                {/* Products Pie */}
+                <Grid item xs={12} md={6}>
+                    <Paper sx={{ p: 2, height: "450px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
+                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Productos por Categoría</Typography>
+                        <ResponsivePie
+                            data={productsByCategory}
+                            theme={{
+                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
+                                legends: { text: { fill: colors.grey[100] } },
+                                tooltip: { container: { color: "#000" } }
+                            }}
+                            margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
+                            innerRadius={0.6}
+                            padAngle={0.7}
+                            cornerRadius={5}
+                            activeOuterRadiusOffset={8}
+                            colors={{ scheme: 'category10' }}
+                            borderWidth={1}
+                            borderColor={{ from: 'color', modifiers: [['darker', 0.2]] }}
+                            arcLinkLabelsSkipAngle={10}
+                            arcLinkLabelsTextColor={colors.grey[100]}
+                            arcLinkLabelsThickness={2}
+                            arcLinkLabelsColor={{ from: 'color' }}
+                            enableArcLabels={true}
+                            arcLabelsSkipAngle={10}
+                            arcLabelsTextColor={{ from: 'color', modifiers: [['darker', 2]] }}
+                            legends={[
+                                {
+                                    anchor: 'bottom',
+                                    direction: 'row',
+                                    justify: false,
+                                    translateX: 0,
+                                    translateY: 56,
+                                    itemsSpacing: 0,
+                                    itemWidth: 85,
+                                    itemHeight: 18,
+                                    itemTextColor: colors.grey[100],
+                                    itemDirection: 'left-to-right',
+                                    itemOpacity: 1,
+                                    symbolSize: 12,
+                                    symbolShape: 'circle',
+                                }
+                            ]}
+                        />
+                    </Paper>
+                </Grid>
+
+                {/* Orders Pie */}
+                <Grid item xs={12} md={6}>
+                    <Paper sx={{ p: 2, height: "450px", bgcolor: colors.primary[400], borderRadius: 2, boxShadow: 3 }}>
+                        <Typography variant="h6" fontWeight="bold" mb={2} color={colors.grey[100]}>Estado de Órdenes</Typography>
+                        <ResponsivePie
+                            data={ordersByStatus}
+                            theme={{
+                                axis: { domain: { line: { stroke: colors.grey[100] } }, legend: { text: { fill: colors.grey[100] } }, ticks: { line: { stroke: colors.grey[100], strokeWidth: 1 }, text: { fill: colors.grey[100] } } },
+                                legends: { text: { fill: colors.grey[100] } },
+                                tooltip: { container: { color: "#000" } }
+                            }}
+                            margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
+                            innerRadius={0.6}
+                            padAngle={0.7}
+                            cornerRadius={5}
+                            activeOuterRadiusOffset={8}
+                            colors={{ scheme: 'set2' }}
+                            borderWidth={1}
+                            borderColor={{ from: 'color', modifiers: [['darker', 0.2]] }}
+                            arcLinkLabelsSkipAngle={10}
+                            arcLinkLabelsTextColor={colors.grey[100]}
+                            arcLinkLabelsThickness={2}
+                            arcLinkLabelsColor={{ from: 'color' }}
+                            enableArcLabels={true}
+                            arcLabelsSkipAngle={10}
+                            arcLabelsTextColor={{ from: 'color', modifiers: [['darker', 2]] }}
+                            legends={[
+                                {
+                                    anchor: 'bottom',
+                                    direction: 'row',
+                                    justify: false,
+                                    translateX: 0,
+                                    translateY: 56,
+                                    itemsSpacing: 0,
+                                    itemWidth: 85,
+                                    itemHeight: 18,
+                                    itemTextColor: colors.grey[100],
+                                    itemDirection: 'left-to-right',
+                                    itemOpacity: 1,
+                                    symbolSize: 12,
+                                    symbolShape: 'circle',
+                                }
+                            ]}
+                        />
                     </Paper>
                 </Grid>
             </Grid>
