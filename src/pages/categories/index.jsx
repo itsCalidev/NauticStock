@@ -175,12 +175,29 @@ export default function Categories() {
     }
   };
 
-  const handleDelete = (id, name) => {
-    setDeleteDialog({
-      open: true,
-      categoryId: id,
-      categoryName: name
-    });
+  const handleDelete = async (id, name) => {
+    try {
+      // Verificar dependencias (productos asociados)
+      const response = await api.get('/api/products');
+      const products = response.data.data || [];
+      // Asumimos que el producto tiene category_id o category.id
+      // En products/index.jsx vimos que tiene category_id
+      const hasDependencies = products.some(p => p.category_id === id || p.category?.id === id);
+
+      if (hasDependencies) {
+        showSnackbar(`No se puede eliminar la categoría "${name}" porque tiene productos asociados.`, "error");
+        return;
+      }
+
+      setDeleteDialog({
+        open: true,
+        categoryId: id,
+        categoryName: name
+      });
+    } catch (error) {
+      console.error("Error checking dependencies:", error);
+      showSnackbar("Error al verificar dependencias", "error");
+    }
   };
 
   const confirmDelete = async () => {

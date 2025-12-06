@@ -309,7 +309,7 @@ export default function Orders() {
                                             name="product_id"
                                             error={!!touched.product_id && !!errors.product_id}
                                         >
-                                            {products.map((prod) => (
+                                            {products.filter(p => p.status === 0).map((prod) => (
                                                 <MenuItem key={prod.id} value={prod.id}>
                                                     {prod.part_number} - {prod.description}
                                                 </MenuItem>
@@ -326,7 +326,7 @@ export default function Orders() {
                                             name="provider_id"
                                             error={!!touched.provider_id && !!errors.provider_id}
                                         >
-                                            {providers.map((prov) => (
+                                            {providers.filter(p => p.status === 0).map((prov) => (
                                                 <MenuItem key={prov.id} value={prov.id}>{prov.name}</MenuItem>
                                             ))}
                                         </Select>

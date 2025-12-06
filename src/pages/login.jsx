@@ -78,7 +78,7 @@ const Login = () => {
         minHeight: "100vh",
         display: "flex",
         flexDirection: isNonMobile ? "row" : "column",
-        backgroundColor: isDark ? "#fff" : "#1f1f1f",
+        backgroundColor: isDark ? "#1f1f1f" : "#fff",
         transition: "background-color 0.3s",
         position: "relative",
         overflow: "hidden",
@@ -138,7 +138,7 @@ const Login = () => {
           sx={{
             width: "100%",
             maxWidth: "450px",
-            backgroundColor: isDark ? "#d5d5d5" : "#141b2d",
+            backgroundColor: isDark ? "#141b2d" : "#d5d5d5",
             padding: "40px",
             borderRadius: "24px",
             boxShadow: 3,
@@ -147,7 +147,12 @@ const Login = () => {
         >
           <IconButton
             onClick={colorMode.toggleColorMode}
-            sx={{ position: "absolute", top: 16, right: 16 }}
+            sx={{
+              position: "absolute",
+              top: 16,
+              right: 16,
+              color: isDark ? "#fff" : "#000"
+            }}
           >
             {isDark ? <Brightness7 /> : <Brightness4 />}
           </IconButton>
@@ -157,7 +162,7 @@ const Login = () => {
             fontWeight="bold"
             textAlign="center"
             mb={4}
-            color={isDark ? "#000" : colors.grey[900]}
+            color={isDark ? colors.grey[100] : "#000"}
           >
             Inicio de Sesión
           </Typography>
@@ -168,9 +173,9 @@ const Login = () => {
             label="Correo electrónico"
             sx={{
               mb: 3,
-              backgroundColor: isDark ? "#b7677e" : "#fff",
+              backgroundColor: isDark ? "#2e3b55" : "#fff",
               borderRadius: "12px",
-              input: { color: "#fff" },
+              input: { color: isDark ? "#fff" : "#000" },
             }}
             InputProps={{ disableUnderline: true }}
             value={credentials.email}
@@ -186,9 +191,9 @@ const Login = () => {
             type="password"
             sx={{
               mb: 3,
-              backgroundColor: isDark ? "#b7677e" : "#fff",
+              backgroundColor: isDark ? "#2e3b55" : "#fff",
               borderRadius: "12px",
-              input: { color: "#fff" },
+              input: { color: isDark ? "#fff" : "#000" },
             }}
             InputProps={{ disableUnderline: true }}
             value={credentials.password}
@@ -224,7 +229,7 @@ const Login = () => {
       <Box
         sx={{
           flex: 1,
-          backgroundColor: isDark ? "#fff" : "#1f1f1f",
+          backgroundColor: isDark ? "#1f1f1f" : "#fff",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -250,7 +255,7 @@ const Login = () => {
           sx={{
             maxWidth: "50%",
             height: "auto",
-            filter: isDark ? "grayscale(0.2)" : "none",
+            filter: isDark ? "none" : "grayscale(0.2)",
           }}
         />
       </Box>
