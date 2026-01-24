@@ -312,6 +312,21 @@ const AccessibilitySidebar = () => {
         </Box>
     );
 
+    // --- LÓGICA DE ESTADO ACTIVO ---
+    const activeOptions = [
+        isDyslexiaFont && "Fuente Dislexia",
+        isMarinaMode && "Modo Marina",
+        isHighContrast && "Alto Contraste",
+        isGrayscale && "Escala de Grises",
+        isCursorChanged && "Cursor Grande",
+        hideImages && "Ocultar Imágenes",
+        highlightLinks && "Resaltar Enlaces",
+        readingGuide && "Guía de Lectura",
+        readingMask && "Máscara de Lectura",
+        screenReader && "Lector de Pantalla",
+        textSpacingVertical > 0 && "Espaciado Vertical",
+        textSpacingHorizontal > 0 && "Espaciado Horizontal"
+    ].filter(Boolean); // Filtra los valores falsos
 
 
     // For the toggle button, we can keep it distinct or match the header
@@ -376,33 +391,51 @@ const AccessibilitySidebar = () => {
             )}
 
             {/* Toggle Button */}
-            <IconButton
-                onClick={() => setIsOpen(!isOpen)}
-                sx={{
-                    position: "fixed",
-                    bottom: 60,
-                    right: 20,
-                    backgroundColor: colors.greenAccent[500],
-                    color: "#fff",
-                    width: 56,
-                    height: 56,
-                    zIndex: 2000,
-                    boxShadow: 3,
-                    "&:hover": {
-                        backgroundColor: colors.greenAccent[600],
-                    },
-                    "&:focus": {
-                        outline: "3px solid #fff",
-                        outlineOffset: "2px",
-                    }
-                }}
-                aria-label={isOpen ? "Cerrar menú de accesibilidad" : "Abrir menú de accesibilidad"}
-                aria-expanded={isOpen}
-                aria-controls="accessibility-sidebar"
-                aria-haspopup="true"
-            >
-                <SettingsIcon fontSize="large" />
-            </IconButton>
+            {/* Toggle Button con Indicador (Badge) */}
+            <Box sx={{ position: "fixed", bottom: 60, right: 20, zIndex: 2000 }}>
+                <IconButton
+                    onClick={() => setIsOpen(!isOpen)}
+                    sx={{
+                        backgroundColor: colors.greenAccent[500],
+                        color: "#fff",
+                        width: 56,
+                        height: 56,
+                        boxShadow: 3,
+                        "&:hover": {
+                            backgroundColor: colors.greenAccent[600],
+                        },
+                        "&:focus": {
+                            outline: "3px solid #fff",
+                            outlineOffset: "2px",
+                        }
+                    }}
+                    aria-label={isOpen ? "Cerrar menú de accesibilidad" : "Abrir menú de accesibilidad"}
+                    aria-expanded={isOpen}
+                    aria-controls="accessibility-sidebar"
+                    aria-haspopup="true"
+                >
+                    <SettingsIcon fontSize="large" />
+                </IconButton>
+
+                {/* PUNTO ROJO: Solo aparece si activeOptions tiene elementos */}
+                {activeOptions.length > 0 && (
+                    <Box
+                        sx={{
+                            position: "absolute",
+                            top: 0,
+                            right: 0,
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            backgroundColor: "#89001bff",
+                            border: "1px solid #fff",
+                            boxShadow: 2,
+                            zIndex: 2001,
+                            pointerEvents: "none" // Para el click pase a través del punto
+                        }}
+                    />
+                )}
+            </Box>
 
             {/* Sidebar Menu */}
             <Box
@@ -452,6 +485,33 @@ const AccessibilitySidebar = () => {
                             <SettingsIcon sx={{ color: colors.grey[100] }} />
                         </IconButton>
                     </Box>
+                    
+                    {/* Contenedor notificador de opciones activas*/}
+                    {activeOptions.length > 0 && (
+                        <Box 
+                            mx={2} 
+                            mt={2} 
+                            p={2} 
+                            bgcolor={colors.primary[400]} 
+                            borderRadius="8px" 
+                            border={`1px solid ${colors.greenAccent[500]}`}
+                            boxShadow="inset 0 0 10px rgba(0,0,0,0.2)"
+                        >
+                            <Typography variant="body2" fontWeight="bold" color={colors.greenAccent[400]} mb={1}>
+                                Funciones Activas ({activeOptions.length}):
+                            </Typography>
+                            <Box display="flex" flexDirection="column" gap={0.5}>
+                                {activeOptions.map((opt, index) => (
+                                    <Box key={index} display="flex" alignItems="center" gap={1}>
+                                        <Box width={6} height={6} borderRadius="50%" bgcolor={colors.greenAccent[500]} />
+                                        <Typography variant="caption" color={colors.grey[100]}>
+                                            {opt}
+                                        </Typography>
+                                    </Box>
+                                ))}
+                            </Box>
+                        </Box>
+                    )}  
 
                     <Box p={2}>
                         <Button
@@ -613,6 +673,14 @@ const AccessibilitySidebar = () => {
             </Box>
 
             <style>{`
+            /* --- CORRECCIÓN DEL SCROLL --- */
+            /* Esto evita que el menú oculto genere scroll horizontal cuando hay filtros activos */
+            html, body {
+            overflow-x: hidden !important;
+            width: 100% !important;
+            position: relative; /* Asegura el contexto */
+            }
+
         /* --- ESTILOS SEMAR --- */
         
         /* Define OpenDyslexic Font */
