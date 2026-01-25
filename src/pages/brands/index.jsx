@@ -166,12 +166,27 @@ export default function Brands() {
         }
     };
 
-    const handleDelete = (id, name) => {
-        setDeleteDialog({
-            open: true,
-            brandId: id,
-            brandName: name
-        });
+    const handleDelete = async (id, name) => {
+        try {
+            // Verificar productos asociados
+            const productsRes = await api.get('/api/products');
+            const products = productsRes.data.data || [];
+            const hasProducts = products.some(p => p.brand_id === id);
+
+            if (hasProducts) {
+                showSnackbar(`No se puede eliminar la marca "${name}" porque tiene productos asociados.`, "error");
+                return;
+            }
+
+            setDeleteDialog({
+                open: true,
+                brandId: id,
+                brandName: name
+            });
+        } catch (error) {
+            console.error("Error checking dependencies:", error);
+            showSnackbar("Error al verificar dependencias", "error");
+        }
     };
 
     const confirmDelete = async () => {

@@ -267,7 +267,6 @@ export default function Providers() {
       }
 
       handleClose();
-      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message =
         error.response?.data?.error || "Error al procesar la solicitud";
@@ -287,7 +286,6 @@ export default function Providers() {
     try {
       await api.delete(`/api/providers/${deleteDialog.providerId}`);
       showSnackbar("Proveedor eliminado exitosamente");
-      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message =
         error.response?.data?.error || "Error al eliminar el proveedor";
@@ -306,7 +304,6 @@ export default function Providers() {
       await api.put(`/api/providers/${id}/status`);
       const action = currentStatus === 0 ? "deshabilitado" : "habilitado";
       showSnackbar(`Proveedor ${name} ${action} exitosamente`);
-      // fetchProviders(); // Socket will handle update
     } catch (error) {
       const message = error.response?.data?.error || "Error al cambiar estado";
       showSnackbar(message, "error");
