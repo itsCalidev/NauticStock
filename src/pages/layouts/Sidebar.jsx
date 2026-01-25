@@ -145,13 +145,15 @@ export default function Sidebar() {
               <Item title="Dashboard" to="/" icon={<HomeOutlinedIcon />} />
             )}
 
-            <Typography
-              variant="h6"
-              color={colors.grey[300]}
-              sx={{ m: "15px 0 5px 20px" }}
-            >
-              Datos
-            </Typography>
+            {!collapsed && (
+              <Typography
+                variant="h6"
+                color={colors.grey[300]}
+                sx={{ m: "15px 0 5px 20px" }}
+              >
+                Datos
+              </Typography>
+            )}
 
             {/* Team */}
             {can('user_read') && (
@@ -204,13 +206,15 @@ export default function Sidebar() {
               />
             )}
 
-            <Typography
-              variant="h6"
-              color={colors.grey[300]}
-              sx={{ m: "15px 0 5px 20px" }}
-            >
-              Administración
-            </Typography>
+            {!collapsed && (
+              <Typography
+                variant="h6"
+                color={colors.grey[300]}
+                sx={{ m: "15px 0 5px 20px" }}
+              >
+                Administración
+              </Typography>
+            )}
 
             {/* Roles */}
             {can('role_read') && (

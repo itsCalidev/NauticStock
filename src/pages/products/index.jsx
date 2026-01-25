@@ -372,7 +372,7 @@ export default function Products() {
     }
   }, []);
 
-  const handleDelete = async () => {
+  const confirmDelete = async () => {
     try {
       await api.delete(`/api/products/${deleteDialog.productId}`);
       setSnackbar({
@@ -1171,7 +1171,7 @@ export default function Products() {
           >
             Cancelar
           </Button>
-          <Button onClick={handleDelete} color="error" variant="contained">
+          <Button onClick={confirmDelete} color="error" variant="contained">
             Eliminar
           </Button>
         </Box>
