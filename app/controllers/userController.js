@@ -10,6 +10,9 @@ const socketManager = require("../classes/socketManager");
 
 const historyModel = new History();
 
+const fs = require("fs");
+const path = require("path");
+
 class UserController extends Controller {
   constructor() {
     super();
@@ -153,6 +156,67 @@ class UserController extends Controller {
       return this.sendInternalError(res, "Error al actualizar usuario");
     }
   }
+
+async updateProfilePic(req, res) {
+  try {
+    const id = req.params.id;
+    const performed_by = req.user.id;
+
+    if (!id) {
+      return this.sendResponse(res, 400, null, "ID inválido");
+    }
+
+    if (!req.file) {
+      return this.sendResponse(res, 400, null, "No se envió ninguna imagen");
+    }
+
+    const user = await this.userModel.findById(id);
+    if (!user) {
+      return this.sendNotFound(res, "Usuario no encontrado");
+    }
+
+    // 🗑️ borrar imagen anterior si existe
+    if (user.profile_pic) {
+      const oldPath = path.join(__dirname, '../../', user.profile_pic);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    const profilePicPath = `/uploads/${req.file.filename}`;
+
+    await this.userModel.updateUser(id, {
+      profile_pic: profilePicPath
+    });
+
+    // 📢 sockets (opcional)
+    socketManager.emit("user_updated", {
+      id,
+      profile_pic: profilePicPath
+    });
+
+    // 📝 historial
+    await historyModel.registerLog({
+      action_type: "Foto de Perfil Actualizada",
+      performed_by,
+      target_user: id,
+      old_value: { profile_pic: user.profile_pic },
+      new_value: { profile_pic: profilePicPath },
+      description: `Actualizó la foto de perfil del usuario ${id}`
+    });
+
+    return this.sendResponse(
+      res,
+      200,
+      { profile_pic: profilePicPath },
+      "Avatar actualizado exitosamente"
+    );
+  } catch (err) {
+    console.error("❌ Error en updateProfilePic:", err);
+    return this.sendInternalError(res, "Error al actualizar la foto de perfil");
+  }
+}
+
 
   getRoleName(roleId) {
     switch (parseInt(roleId)) {

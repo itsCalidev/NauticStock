@@ -5,6 +5,7 @@ const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/isAdmin');
 const UserController = require('../controllers/userController');
 const userCtrl = new UserController();
+const upload = require('../middleware/upload'); // 👈 FALTABA ESTO
 
 // 👇 NUEVA RUTA: Actualizar mi propio perfil (solo contraseña)
 router.put(
@@ -21,6 +22,15 @@ router.post(
   auth, isAdmin,
   async (req, res) => {
     await userCtrl.register(req, res);
+  }
+);
+
+router.put(
+  '/:id/profile-pic',
+  auth,
+  upload.single('profilePic'),
+  async (req, res) => {
+    await userCtrl.updateProfilePic(req, res);
   }
 );
 

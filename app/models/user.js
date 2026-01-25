@@ -13,6 +13,7 @@ class User extends Model {
       "rank_id",
       "status",
       "roleId",
+      "profile_pic",
     ];
 
     this.initializeDB();
@@ -29,7 +30,7 @@ class User extends Model {
         .get();
       return rows[0] || null;
     } catch (error) {
-      console.error('❌ Error en findByEmail:', error);
+      console.error("❌ Error en findByEmail:", error);
       throw error;
     }
   }
@@ -45,10 +46,9 @@ class User extends Model {
         .where([["user.id", id]])
         .get();
 
-
       return rows[0] || null;
     } catch (error) {
-      console.error('❌ Error en findById:', error);
+      console.error("❌ Error en findById:", error);
       throw error;
     }
   }
@@ -67,10 +67,13 @@ class User extends Model {
         }
       });
 
-      console.log('📝 Registering user with data:', { ...filteredData, password: '***' });
+      console.log("📝 Registering user with data:", {
+        ...filteredData,
+        password: "***",
+      });
       return await this.insert(filteredData);
     } catch (error) {
-      console.error('❌ Error en registerUser:', error);
+      console.error("❌ Error en registerUser:", error);
       throw error;
     }
   }
@@ -96,7 +99,10 @@ class User extends Model {
         }
       });
 
-      console.log('📝 Updating user:', id, 'with data:', { ...filteredData, password: filteredData.password ? '***' : undefined });
+      console.log("📝 Updating user:", id, "with data:", {
+        ...filteredData,
+        password: filteredData.password ? "***" : undefined,
+      });
 
       if (Object.keys(filteredData).length === 0) {
         return 0; // Nothing to update
@@ -109,14 +115,14 @@ class User extends Model {
 
       return result;
     } catch (error) {
-      console.error('❌ Error en updateUser:', error);
+      console.error("❌ Error en updateUser:", error);
       throw error;
     }
   }
 
   async deleteUser(id) {
     try {
-      console.log('🗑️ Deleting user:', id);
+      console.log("🗑️ Deleting user:", id);
 
       const result = await this.getDB()
         .where([["id", id]])
@@ -124,7 +130,7 @@ class User extends Model {
 
       return result;
     } catch (error) {
-      console.error('❌ Error en deleteUser:', error);
+      console.error("❌ Error en deleteUser:", error);
       throw error;
     }
   }
@@ -132,7 +138,7 @@ class User extends Model {
   /** Actualiza la columna last_access con la fecha actual */
   async updateLastAccess(id) {
     try {
-      console.log('🕒 Updating last access for user:', id);
+      console.log("🕒 Updating last access for user:", id);
 
       // Usamos Date() → MySQL lo castea a DATETIME
       const result = await this.getDB()
@@ -141,7 +147,7 @@ class User extends Model {
 
       return result;
     } catch (error) {
-      console.error('❌ Error en updateLastAccess:', error);
+      console.error("❌ Error en updateLastAccess:", error);
       throw error;
     }
   }
@@ -149,7 +155,7 @@ class User extends Model {
   /** Trae todos los usuarios + rol + rango + last_access */
   async getAllUsers() {
     try {
-      console.log('📋 Getting all users...');
+      console.log("📋 Getting all users...");
 
       const cols = [
         "user.id",
@@ -173,10 +179,10 @@ class User extends Model {
         .join("ranks", "ranks.id = user.rank_id", "LEFT")
         .get();
 
-      console.log('📋 Users retrieved:', rows.length);
+      console.log("📋 Users retrieved:", rows.length);
       return rows;
     } catch (error) {
-      console.error('❌ Error en getAllUsers:', error);
+      console.error("❌ Error en getAllUsers:", error);
       throw error;
     }
   }
@@ -189,12 +195,12 @@ class User extends Model {
          FROM permission p 
          JOIN role_permission rp ON p.id = rp.permission_id 
          WHERE rp.role_id = ?`,
-        [roleId]
+        [roleId],
       );
 
-      return Array.isArray(rows) ? rows.map(r => r.name) : [];
+      return Array.isArray(rows) ? rows.map((r) => r.name) : [];
     } catch (error) {
-      console.error('❌ Error getting permissions:', error);
+      console.error("❌ Error getting permissions:", error);
       return [];
     }
   }
