@@ -425,8 +425,16 @@ export default function Team() {
         )
       }
 
-      <TableContainer component={Paper} sx={{ backgroundColor: safeColors.primary[400], mt: "40px" }}>
-        <Table>
+<TableContainer
+  component={Paper}
+  sx={{
+    backgroundColor: colors.primary[400],
+    mt: "40px",
+    maxHeight: "60vh",   // 👈 altura máxima (ajustable)
+    overflowY: "auto",   // 👈 scroll vertical
+  }}
+>
+<Table stickyHeader>
           <TableHead sx={{ backgroundColor: safeColors.blueAccent[700] }}>
             <TableRow>
               <TableCell><Typography fontWeight="bold">Nombre</Typography></TableCell>
