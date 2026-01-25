@@ -65,6 +65,34 @@ export default function Orders() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
 
+const viewLabels = {
+  product: "Producto",
+  provider: "Proveedor",
+  quantity: "Cantidad",
+  status: "Estado",
+  orderDate: "Fecha de creación",
+  expectedDate: "Fecha esperada",
+  notes: "Notas",
+  actions: "Acciones",
+};
+
+const formatKey = (key) =>
+  key.replace(/([A-Z])/g, " $1").replace(/^./, str => str.toUpperCase());
+
+    
+const [viewConfig, setViewConfig] = useState({
+  product: true,
+  provider: true,
+  quantity: true,
+  status: true,
+  orderDate: true,
+  expectedDate: true,
+  notes: true,
+  actions: true,
+});
+
+const [openViewDialog, setOpenViewDialog] = useState(false);
+
     const { can } = usePermission();
     const { searchTerm } = useSearch();
 
@@ -103,6 +131,17 @@ export default function Orders() {
     useEffect(() => {
         loadData();
     }, [loadData]);
+
+useEffect(() => {
+  const savedConfig = localStorage.getItem("orders_view_config");
+  if (savedConfig) {
+    setViewConfig(JSON.parse(savedConfig));
+  }
+}, []);
+
+useEffect(() => {
+  localStorage.setItem("orders_view_config", JSON.stringify(viewConfig));
+}, [viewConfig]);
 
     const handleOpenDialog = (order = null) => {
         setEditingOrder(order);
@@ -176,6 +215,14 @@ export default function Orders() {
 
             <Box display="flex" justifyContent="flex-end" mb={2} gap={2}>
                 <Button
+  variant="outlined"
+  color="info"
+  onClick={() => setOpenViewDialog(true)}
+>
+  Personalizar vista
+</Button>
+
+                <Button
                     variant="contained"
                     color="success"
                     startIcon={<FileDownloadIcon />}
@@ -206,81 +253,164 @@ export default function Orders() {
                 )}
             </Box>
 
-            <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
-                <Table>
-                    <TableHead sx={{ backgroundColor: colors.blueAccent[700] }}>
-                        <TableRow>
-                            <TableCell><Typography fontWeight="bold">ID</Typography></TableCell>
-                            <TableCell><Typography fontWeight="bold">Producto</Typography></TableCell>
-                            <TableCell><Typography fontWeight="bold">Proveedor</Typography></TableCell>
-                            <TableCell align="center"><Typography fontWeight="bold">Cantidad</Typography></TableCell>
-                            <TableCell align="center"><Typography fontWeight="bold">Estado</Typography></TableCell>
-                            <TableCell><Typography fontWeight="bold">Fecha Creación</Typography></TableCell>
-                            <TableCell><Typography fontWeight="bold">Fecha Esperada</Typography></TableCell>
-                            <TableCell><Typography fontWeight="bold">Notas</Typography></TableCell>
-                            <TableCell align="center"><Typography fontWeight="bold">Acciones</Typography></TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {filteredOrders.map((order) => (
-                            <TableRow key={order.id} hover>
-                                <TableCell>
-                                    <SearchHighlighter text={order.id} searchTerm={searchTerm} />
-                                </TableCell>
-                                <TableCell>
-                                    <SearchHighlighter text={order.product_name} searchTerm={searchTerm} />
-                                </TableCell>
-                                <TableCell>
-                                    <SearchHighlighter text={order.provider_name} searchTerm={searchTerm} />
-                                </TableCell>
-                                <TableCell align="center">{order.quantity}</TableCell>
-                                <TableCell align="center">
-                                    <Chip
-                                        label={order.status === 'pending' ? 'Pendiente' : order.status === 'received' ? 'Recibido' : 'Cancelado'}
-                                        color={order.status === 'received' ? 'success' : order.status === 'pending' ? 'warning' : 'default'}
-                                        size="small"
-                                    />
-                                </TableCell>
-                                <TableCell>{new Date(order.order_date).toLocaleDateString()}</TableCell>
-                                <TableCell>{order.expected_date ? new Date(order.expected_date).toLocaleDateString() : '-'}</TableCell>
-                                <TableCell>
-                                    <SearchHighlighter text={order.notes || '-'} searchTerm={searchTerm} />
-                                </TableCell>
-                                <TableCell align="center">
-                                    <Box display="flex" justifyContent="center" gap={1}>
-                                        <Tooltip title="Descargar PDF">
-                                            <IconButton size="small" color="primary" onClick={() => generateOrderPDF(order)}>
-                                                <PictureAsPdfIcon fontSize="small" />
-                                            </IconButton>
-                                        </Tooltip>
-                                        {order.status === 'pending' && can('order_update') && (
-                                            <Tooltip title="Marcar como Recibido">
-                                                <IconButton size="small" color="success" onClick={() => handleStatusChange(order.id, order.status)}>
-                                                    <CheckCircleIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        )}
-                                        {can('order_update') && (
-                                            <Tooltip title="Editar">
-                                                <IconButton size="small" color="warning" onClick={() => handleOpenDialog(order)}>
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        )}
-                                        {can('order_delete') && (
-                                            <Tooltip title="Eliminar">
-                                                <IconButton size="small" color="error" onClick={() => setDeleteDialog({ open: true, orderId: order.id })}>
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        )}
-                                    </Box>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
-            </TableContainer>
+<TableContainer
+  component={Paper}
+  sx={{
+    backgroundColor: colors.primary[400],
+    mt: "40px",
+    maxHeight: "60vh",
+    overflowY: "auto",
+  }}
+>
+  <Table stickyHeader>
+    {/* HEADER */}
+    <TableHead sx={{ backgroundColor: colors.blueAccent[700] }}>
+      <TableRow>
+        {viewConfig.product && <TableCell>Producto</TableCell>}
+        {viewConfig.provider && <TableCell>Proveedor</TableCell>}
+        {viewConfig.quantity && <TableCell align="center">Cantidad</TableCell>}
+        {viewConfig.status && <TableCell align="center">Estado</TableCell>}
+        {viewConfig.orderDate && <TableCell>Fecha Creación</TableCell>}
+        {viewConfig.expectedDate && <TableCell>Fecha Esperada</TableCell>}
+        {viewConfig.notes && <TableCell>Notas</TableCell>}
+        {viewConfig.actions && <TableCell align="center">Acciones</TableCell>}
+      </TableRow>
+    </TableHead>
+
+    {/* BODY */}
+    <TableBody>
+      {filteredOrders.map((order) => (
+        <TableRow key={order.id} hover>
+
+          {viewConfig.product && (
+            <TableCell>
+              <SearchHighlighter
+                text={order.product_name}
+                searchTerm={searchTerm}
+              />
+            </TableCell>
+          )}
+
+          {viewConfig.provider && (
+            <TableCell>
+              <SearchHighlighter
+                text={order.provider_name}
+                searchTerm={searchTerm}
+              />
+            </TableCell>
+          )}
+
+          {viewConfig.quantity && (
+            <TableCell align="center">{order.quantity}</TableCell>
+          )}
+
+          {viewConfig.status && (
+            <TableCell align="center">
+              <Chip
+                label={
+                  order.status === "pending"
+                    ? "Pendiente"
+                    : order.status === "received"
+                    ? "Recibido"
+                    : "Cancelado"
+                }
+                color={
+                  order.status === "received"
+                    ? "success"
+                    : order.status === "pending"
+                    ? "warning"
+                    : "default"
+                }
+                size="small"
+              />
+            </TableCell>
+          )}
+
+          {viewConfig.orderDate && (
+            <TableCell>
+              {new Date(order.order_date).toLocaleDateString()}
+            </TableCell>
+          )}
+
+          {viewConfig.expectedDate && (
+            <TableCell>
+              {order.expected_date
+                ? new Date(order.expected_date).toLocaleDateString()
+                : "-"}
+            </TableCell>
+          )}
+
+          {viewConfig.notes && (
+            <TableCell>
+              <SearchHighlighter
+                text={order.notes || "-"}
+                searchTerm={searchTerm}
+              />
+            </TableCell>
+          )}
+
+          {viewConfig.actions && (
+            <TableCell align="center">
+              <Box display="flex" justifyContent="center" gap={1}>
+                <Tooltip title="Descargar PDF">
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={() => generateOrderPDF(order)}
+                  >
+                    <PictureAsPdfIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+
+                {order.status === "pending" && can("order_update") && (
+                  <Tooltip title="Marcar como Recibido">
+                    <IconButton
+                      size="small"
+                      color="success"
+                      onClick={() =>
+                        handleStatusChange(order.id, order.status)
+                      }
+                    >
+                      <CheckCircleIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+
+                {can("order_update") && (
+                  <Tooltip title="Editar">
+                    <IconButton
+                      size="small"
+                      color="warning"
+                      onClick={() => handleOpenDialog(order)}
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+
+                {can("order_delete") && (
+                  <Tooltip title="Eliminar">
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() =>
+                        setDeleteDialog({ open: true, orderId: order.id })
+                      }
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Box>
+            </TableCell>
+          )}
+
+        </TableRow>
+      ))}
+    </TableBody>
+  </Table>
+</TableContainer>
+
 
             {/* Modal Creación/Edición */}
             <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
@@ -405,6 +535,30 @@ export default function Orders() {
                 message={snackbar.message}
                 severity={snackbar.severity}
             />
+            <Dialog open={openViewDialog} onClose={() => setOpenViewDialog(false)}>
+  <DialogTitle>Personalizar vista</DialogTitle>
+  <DialogContent>
+    {Object.keys(viewConfig).map((key) => (
+      <Box key={key} display="flex" alignItems="center" gap={1} my={1}>
+        <input
+          type="checkbox"
+          checked={viewConfig[key]}
+          onChange={() =>
+            setViewConfig((prev) => ({
+              ...prev,
+              [key]: !prev[key],
+            }))
+          }
+        />
+<Typography>
+  {viewLabels[key] ?? formatKey(key)}
+</Typography>
+        
+      </Box>
+    ))}
+  </DialogContent>
+</Dialog>
+
         </Box>
     );
 }

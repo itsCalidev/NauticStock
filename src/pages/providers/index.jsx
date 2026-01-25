@@ -331,8 +331,16 @@ export default function Providers() {
         </Box>
       </Box>
 
-      <TableContainer component={Paper} sx={{ backgroundColor: colors.primary[400] }}>
-        <Table>
+<TableContainer
+  component={Paper}
+  sx={{
+    backgroundColor: colors.primary[400],
+    mt: "40px",
+    maxHeight: "60vh",   // 👈 altura máxima (ajustable)
+    overflowY: "auto",   // 👈 scroll vertical
+  }}
+>
+<Table stickyHeader>
           <TableHead sx={{ backgroundColor: colors.blueAccent[700] }}>
             <TableRow>
               <TableCell>Nombre</TableCell>

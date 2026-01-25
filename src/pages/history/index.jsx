@@ -284,11 +284,18 @@ const History = () => {
                 </Alert>
             )}
 
-            <TableContainer component={Paper} sx={{ backgroundColor: safeColors.primary[400], mt: "40px" }}>
-                <Table>
+<TableContainer
+  component={Paper}
+  sx={{
+    backgroundColor: colors.primary[400],
+    mt: "40px",
+    maxHeight: "60vh",   // 👈 altura máxima (ajustable)
+    overflowY: "auto",   // 👈 scroll vertical
+  }}
+>
+<Table stickyHeader>
                     <TableHead sx={{ backgroundColor: safeColors.blueAccent[700] }}>
                         <TableRow>
-                            <TableCell align="center"><Typography fontWeight="bold">ID</Typography></TableCell>
                             <TableCell><Typography fontWeight="bold">Fecha y Hora</Typography></TableCell>
                             <TableCell align="center"><Typography fontWeight="bold">Acción</Typography></TableCell>
                             <TableCell><Typography fontWeight="bold">Realizado por</Typography></TableCell>
@@ -299,9 +306,6 @@ const History = () => {
                     <TableBody>
                         {filteredRows.map((row) => (
                             <TableRow key={row.id} hover>
-                                <TableCell align="center">
-                                    <SearchHighlighter text={row.id?.toString()} searchTerm={searchTerm} />
-                                </TableCell>
                                 <TableCell>
                                     <SearchHighlighter text={row.fecha} searchTerm={searchTerm} />
                                 </TableCell>
