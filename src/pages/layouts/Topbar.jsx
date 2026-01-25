@@ -156,8 +156,14 @@ const Topbar = () => {
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("products_view_config");
+    localStorage.removeItem("users_view_config");
+    localStorage.removeItem("providers_view_config");
+    localStorage.removeItem("orders_view_config");
+
     delete api.defaults.headers.common["Authorization"];
     navigate("/login", { replace: true });
+
   };
 
   const handleNotificationClick = (event) => {

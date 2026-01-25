@@ -34,6 +34,7 @@ import {
   CheckCircle as CheckCircleIcon,
   FileDownload as FileDownloadIcon,
 } from "@mui/icons-material";
+import TablePagination from "@mui/material/TablePagination";
 import { Formik } from "formik";
 import * as yup from "yup";
 import Header from "../../components/Header";
@@ -116,6 +117,18 @@ export default function Products() {
   });
   const [openViewDialog, setOpenViewDialog] = useState(false);
 
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+
+  const handleChangePage = (_, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0); // volver a la primera página
+  };
+
   useEffect(() => {
     if (!can("product_read")) {
       navigate("/");
@@ -132,6 +145,10 @@ export default function Products() {
   useEffect(() => {
     localStorage.setItem("products_view_config", JSON.stringify(viewConfig));
   }, [viewConfig]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [searchTerm, showInactive]);
 
   const [stockDialog, setStockDialog] = useState({
     open: false,
@@ -184,6 +201,15 @@ export default function Products() {
 
     return filtered;
   }, [products, showInactive, isSearching, searchTerm]);
+
+  const paginatedProducts = useMemo(() => {
+    return rowsPerPage > 0
+      ? filteredProducts.slice(
+          page * rowsPerPage,
+          page * rowsPerPage + rowsPerPage,
+        )
+      : filteredProducts; // -1 = todos
+  }, [filteredProducts, page, rowsPerPage]);
 
   const loadProducts = useCallback(async ({ silent = false } = {}) => {
     try {
@@ -544,7 +570,7 @@ export default function Products() {
 
           {/* BODY */}
           <TableBody>
-            {filteredProducts.map((product) => {
+            {paginatedProducts.map((product) => {
               const isActive = product.status === 0;
 
               let stockStatus = { label: "Normal", color: "success" };
@@ -847,6 +873,19 @@ export default function Products() {
           </TableBody>
         </Table>
       </TableContainer>
+      <TablePagination
+        component="div"
+        count={filteredProducts.length}
+        page={page}
+        onPageChange={handleChangePage}
+        rowsPerPage={rowsPerPage}
+        onRowsPerPageChange={handleChangeRowsPerPage}
+        rowsPerPageOptions={[25, 50, 100, { label: "Todos", value: -1 }]}
+        labelRowsPerPage="Filas por página:"
+        labelDisplayedRows={({ from, to, count }) =>
+          `${from}–${to} de ${count !== -1 ? count : `más de ${to}`}`
+        }
+      />
 
       {/* Modal de Creación/Edición */}
       <Dialog
