@@ -158,8 +158,10 @@ const Profile = () => {
         form,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
-      console.log("Avatar response:", data);
-      const updated = { ...user, profile_pic: data.profile_pic };
+const updated = {
+  ...user,
+  profile_pic: data.profile_pic,
+};
       localStorage.setItem("user", JSON.stringify(updated));
       setUser(updated);
       setPreviewUrl(null);
