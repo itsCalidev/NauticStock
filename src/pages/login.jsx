@@ -18,6 +18,9 @@ import AccessibilitySidebar from "../pages/layouts/SidebarAccesibility";
 import LoginImage from "../assets/Mantenimiento_Elect.png";
 import LogoImage from "../assets/SEMAR.png";
 import Hojas from "../assets/Hojitas.png";
+import { InputAdornment } from "@mui/material"; // O la ruta que uses
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 
 const Login = () => {
   const theme = useTheme();
@@ -53,9 +56,7 @@ const Login = () => {
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
       // configurar axios para enviar el token en futuras peticiones
-      api.defaults.headers.common[
-        "Authorization"
-      ] = `Bearer ${token}`;
+      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
       setSnackbar({
         open: true,
@@ -70,6 +71,21 @@ const Login = () => {
         severity: "error",
       });
     }
+  };
+
+  const [showPasswords, setShowPasswords] = useState({
+    password: false,
+  });
+
+  const handleClickShowPassword = (field) => {
+    setShowPasswords((prevState) => ({
+      ...prevState,
+      [field]: !prevState[field], // Invierte solo el campo específico
+    }));
+  };
+
+  const handleMouseDownPassword = (event) => {
+    event.preventDefault(); // Evita que el foco se pierda del input al hacer click
   };
 
   return (
@@ -151,7 +167,7 @@ const Login = () => {
               position: "absolute",
               top: 16,
               right: 16,
-              color: isDark ? "#fff" : "#000"
+              color: isDark ? "#fff" : "#000",
             }}
           >
             {isDark ? <Brightness7 /> : <Brightness4 />}
@@ -188,14 +204,31 @@ const Login = () => {
             fullWidth
             variant="filled"
             label="Contraseña"
-            type="password"
+            type={showPasswords.password ? "text" : "password"}
             sx={{
               mb: 3,
               backgroundColor: isDark ? "#2e3b55" : "#fff",
               borderRadius: "12px",
               input: { color: isDark ? "#fff" : "#000" },
             }}
-            InputProps={{ disableUnderline: true }}
+            InputProps={{
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton
+                    onClick={() => handleClickShowPassword("password")}
+                    onMouseDown={handleMouseDownPassword}
+                    edge="end"
+                  >
+                    {showPasswords.password ? (
+                      <VisibilityOff />
+                    ) : (
+                      <Visibility />
+                    )}
+                  </IconButton>
+                </InputAdornment>
+              ),
+              disableUnderline: true,
+            }}
             value={credentials.password}
             onChange={(e) =>
               setCredentials({ ...credentials, password: e.target.value })
@@ -259,7 +292,6 @@ const Login = () => {
           }}
         />
       </Box>
-
 
       <AccessibilitySidebar />
 

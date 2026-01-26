@@ -228,21 +228,38 @@ async updateProfilePic(req, res) {
   }
 
   /** Actualizar mi propia contraseña */
-  async updateMyPassword(req, res) {
+async updateMyPassword(req, res) {
     try {
       const id = req.user.id;
-      const { password } = req.body;
+      // Esperamos: current_password (la actual en texto plano) y new_password (la nueva)
+      const { current_password, new_password } = req.body;
 
-      if (!password) {
-        return this.sendResponse(res, 400, null, "La contraseña es requerida");
+      if (!current_password || !new_password) {
+        return this.sendResponse(res, 400, null, "Debes proporcionar la contraseña actual y la nueva.");
       }
 
-      if (password.length < 6) {
-        return this.sendResponse(res, 400, null, "La contraseña debe tener al menos 6 caracteres");
+      if (new_password.length < 6) {
+        return this.sendResponse(res, 400, null, "La nueva contraseña debe tener al menos 6 caracteres.");
       }
 
-      // Reutilizamos la lógica de update, pero restringida a solo password
-      const result = await this.userModel.updateUser(id, { password });
+      // 1. Obtener el usuario de la BD (con su hash de contraseña)
+      const user = await this.userModel.findByIdWithPassword(id);
+
+      if (!user) {
+        return this.sendResponse(res, 404, null, "Usuario no encontrado.");
+      }
+
+      // 2. VERIFICACIÓN DE SEGURIDAD: ¿La contraseña actual coincide?
+      const isMatch = bcrypt.compareSync(current_password, user.password);
+
+      if (!isMatch) {
+        // Retornamos 401 (Unauthorized) o 400
+        return this.sendResponse(res, 401, null, "La contraseña actual es incorrecta.");
+      }
+
+      // 3. Si pasó la validación, actualizamos con la NUEVA contraseña
+      // El modelo se encargará de hashear 'new_password' porque la pasamos en el campo 'password'
+      const result = await this.userModel.updateUser(id, { password: new_password });
 
       // Log history
       await historyModel.registerLog({
@@ -250,16 +267,17 @@ async updateProfilePic(req, res) {
         performed_by: id,
         target_user: id,
         old_value: null,
-        new_value: null, // No guardamos la contraseña en logs por seguridad
-        description: `Usuario ${id} cambió su propia contraseña`
+        new_value: null,
+        description: `Usuario ${id} cambió su propia contraseña mediante verificación segura`
       });
 
-      return this.sendResponse(res, 200, { updated: true }, "Contraseña actualizada exitosamente");
+      return this.sendResponse(res, 200, { updated: true }, "Contraseña actualizada exitosamente.");
+
     } catch (err) {
       console.error('Error en updateMyPassword:', err);
       return this.sendInternalError(res, "Error al actualizar contraseña");
     }
-  }
+}
 
   /** Eliminar usuario */
   async delete(req, res) {

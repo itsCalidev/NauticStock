@@ -204,6 +204,22 @@ class User extends Model {
       return [];
     }
   }
+
+  // En tu userModel
+  async findByIdWithPassword(id) {
+    try {
+      const db = this.getDB();
+      db.reset();
+      const rows = await db
+        .select(["*"])
+        .where([["id", id]])
+        .get();
+      return rows[0] || null;
+    } catch (error) {
+      console.error("❌ Error en findByIdWithPassword:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = User;

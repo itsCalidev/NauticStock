@@ -20,6 +20,10 @@ import AppSnackbar from "../../components/AppSnackbar";
 import defaultPic from "../../assets/default.png";
 import { useSocket } from "../../context/SocketContext";
 
+import { InputAdornment, IconButton } from "@mui/material"; // O la ruta que uses
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
+
 const schema = yup.object().shape({
   password: yup.string().min(8, "Mínimo 8 caracteres").required("Requerido"),
   confirm_password: yup
@@ -41,7 +45,9 @@ const Profile = () => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [snackbar, setSnackbar] = useState({
-    open: false, message: "", severity: "info"
+    open: false,
+    message: "",
+    severity: "info",
   });
 
   // para revocar URLs temporales
@@ -61,7 +67,7 @@ const Profile = () => {
           account: localUser.account || "",
           rank: localUser.ranks || localUser.rank || "",
           password: "",
-          confirm_password: ""
+          confirm_password: "",
         });
 
         try {
@@ -78,7 +84,7 @@ const Profile = () => {
             account: remoteUser.account || "",
             rank: remoteUser.ranks || remoteUser.rank || "",
             password: "",
-            confirm_password: ""
+            confirm_password: "",
           });
         } catch (error) {
           console.error("Error fetching user profile:", error);
@@ -102,31 +108,34 @@ const Profile = () => {
     const handleUserUpdate = (data) => {
       // Si el usuario actualizado es el usuario actual
       if (data.id === user.id || (data.data && data.data.id === user.id)) {
-        console.log('🔔 Profile update received:', data);
+        console.log("🔔 Profile update received:", data);
         // Refrescar datos del usuario
-        api.get(`/api/users/${user.id}`).then(res => {
-          const updatedUser = res.data.data || res.data;
-          localStorage.setItem("user", JSON.stringify(updatedUser));
-          setUser(updatedUser);
-          setInitialValues({
-            name: updatedUser.name || "",
-            email: updatedUser.email || "",
-            account: updatedUser.account || "",
-            rank: updatedUser.ranks || updatedUser.rank || "",
-            password: "",
-            confirm_password: ""
-          });
-          showSnackbar("Tu perfil ha sido actualizado remotamente", "info");
-        }).catch(err => console.error("Error refreshing profile", err));
+        api
+          .get(`/api/users/${user.id}`)
+          .then((res) => {
+            const updatedUser = res.data.data || res.data;
+            localStorage.setItem("user", JSON.stringify(updatedUser));
+            setUser(updatedUser);
+            setInitialValues({
+              name: updatedUser.name || "",
+              email: updatedUser.email || "",
+              account: updatedUser.account || "",
+              rank: updatedUser.ranks || updatedUser.rank || "",
+              password: "",
+              confirm_password: "",
+            });
+            showSnackbar("Tu perfil ha sido actualizado remotamente", "info");
+          })
+          .catch((err) => console.error("Error refreshing profile", err));
       }
     };
 
-    socket.on('user_updated', handleUserUpdate);
-    socket.on('user_status_changed', handleUserUpdate);
+    socket.on("user_updated", handleUserUpdate);
+    socket.on("user_status_changed", handleUserUpdate);
 
     return () => {
-      socket.off('user_updated', handleUserUpdate);
-      socket.off('user_status_changed', handleUserUpdate);
+      socket.off("user_updated", handleUserUpdate);
+      socket.off("user_status_changed", handleUserUpdate);
     };
   }, [socket, user]);
 
@@ -134,7 +143,7 @@ const Profile = () => {
     setSnackbar({ open: true, message, severity });
   };
 
-  const handleAvatarChange = e => {
+  const handleAvatarChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       if (prevUrlRef.current) {
@@ -153,15 +162,13 @@ const Profile = () => {
     try {
       const form = new FormData();
       form.append("avatar", avatarFile);
-      const { data } = await api.post(
-        `/users/${user.id}/avatar`,
-        form,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-const updated = {
-  ...user,
-  profile_pic: data.profile_pic,
-};
+      const { data } = await api.post(`/users/${user.id}/avatar`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const updated = {
+        ...user,
+        profile_pic: data.profile_pic,
+      };
       localStorage.setItem("user", JSON.stringify(updated));
       setUser(updated);
       setPreviewUrl(null);
@@ -175,33 +182,84 @@ const updated = {
     }
   };
 
-  const handlePasswordSubmit = async values => {
-    if (!values.password || !values.confirm_password) {
-      showSnackbar("Por favor ingresa y confirma la contraseña.", "warning");
+  const handlePasswordSubmit = async (values) => {
+    // Validamos que los tres campos existan
+    if (
+      !values.current_password ||
+      !values.password ||
+      !values.confirm_password
+    ) {
+      showSnackbar("Todos los campos son obligatorios.", "warning");
       return;
     }
+
+    // Validamos que la nueva y la confirmación coincidan
     if (values.password !== values.confirm_password) {
-      showSnackbar("Las contraseñas no coinciden.", "error");
+      showSnackbar(
+        "La nueva contraseña y su confirmación no coinciden.",
+        "error",
+      );
       return;
     }
-    try {
-      // 👇 CAMBIAR LA RUTA: usar /api/users/me/password en lugar de /users/${user.id}
-      await api.put(`/api/users/me/password`, { password: values.password });
+
+    // (Opcional) Validar que la nueva no sea igual a la actual (validación de UX)
+    if (values.current_password === values.password) {
       showSnackbar(
-        "La contraseña ha sido actualizada. Por razones de seguridad se cerrará la sesión.",
-        "info"
+        "La nueva contraseña no puede ser igual a la actual.",
+        "warning",
       );
+      return;
+    }
+
+    try {
+      // Enviamos 'current_password' y 'new_password'
+      await api.put(`/api/users/me/password`, {
+        current_password: values.current_password,
+        new_password: values.password,
+      });
+
+      showSnackbar(
+        "Contraseña actualizada. Por seguridad se cerrará la sesión.",
+        "info",
+      );
+
       setTimeout(() => {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
+        localStorage.removeItem("products_view_config");
+        localStorage.removeItem("users_view_config");
+        localStorage.removeItem("providers_view_config");
+        localStorage.removeItem("orders_view_config");
+        // ... resto de tus cleanups ...
         delete api.defaults.headers.common["Authorization"];
         navigate("/login", { replace: true });
       }, 3500);
     } catch (err) {
-      showSnackbar(err.response?.data?.error || "Error al actualizar.", "error");
+      // Esto capturará si el backend dice "La contraseña actual es incorrecta"
+      showSnackbar(
+        err.response?.data?.error || "Error al actualizar.",
+        "error",
+      );
     }
   };
 
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    new: false,
+    confirm: false,
+  });
+
+  const handleClickShowPassword = (field) => {
+    setShowPasswords((prevState) => ({
+      ...prevState,
+      [field]: !prevState[field], // Invierte solo el campo específico
+    }));
+  };
+
+  const handleMouseDownPassword = (event) => {
+    event.preventDefault(); // Evita que el foco se pierda del input al hacer click
+  };
+  
   if (!initialValues) return null;
 
   return (
@@ -304,7 +362,6 @@ const updated = {
                   },
                 }}
               >
-
                 {/** Campos read-only con alerta **/}
                 {[
                   ["Nombre completo", "name"],
@@ -321,36 +378,123 @@ const updated = {
                     InputProps={{ readOnly: true }}
                     inputProps={{
                       style: { cursor: "pointer" },
-                      onClick: () => showSnackbar(`Si deseas cambiar tu ${label}, contacta al Administrador.`),
-                      onSelect: () => showSnackbar(`Si deseas cambiar tu ${label}, contacta al Administrador.`),
+                      onClick: () =>
+                        showSnackbar(
+                          `Si deseas cambiar tu ${label}, contacta al Administrador.`,
+                        ),
+                      onSelect: () =>
+                        showSnackbar(
+                          `Si deseas cambiar tu ${label}, contacta al Administrador.`,
+                        ),
                     }}
                   />
                 ))}
 
-                {/** Campos de contraseña **/}
+                {/* 1. CAMPO: CONTRASEÑA ACTUAL */}
                 <TextField
                   fullWidth
                   variant="filled"
-                  type="password"
+                  type={showPasswords.current ? "text" : "password"}
+                  label="Contraseña actual"
+                  name="current_password"
+                  onBlur={handleBlur}
+                  onChange={handleChange}
+                  value={values.current_password}
+                  error={
+                    !!touched.current_password && !!errors.current_password
+                  }
+                  helperText={
+                    touched.current_password && errors.current_password
+                  }
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          // B. Pasamos 'current' a la función usando una arrow function
+                          onClick={() => handleClickShowPassword("current")}
+                          onMouseDown={handleMouseDownPassword}
+                          edge="end"
+                        >
+                          {/* C. Verificamos el estado 'current' para el icono */}
+                          {showPasswords.current ? (
+                            <VisibilityOff />
+                          ) : (
+                            <Visibility />
+                          )}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ mb: 2 }} // Un poco de margen abajo
+                />
+
+                {/* 2. CAMPO: NUEVA CONTRASEÑA */}
+                <TextField
+                  fullWidth
+                  variant="filled"
+                  type={showPasswords.new ? "text" : "password"}
                   label="Nueva contraseña"
-                  name="password"
+                  name="password" // Ojo: en Formik values esto será values.password
                   onBlur={handleBlur}
                   onChange={handleChange}
                   value={values.password}
                   error={!!touched.password && !!errors.password}
                   helperText={touched.password && errors.password}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          // B. Pasamos 'new'
+                          onClick={() => handleClickShowPassword("new")}
+                          onMouseDown={handleMouseDownPassword}
+                          edge="end"
+                        >
+                          {showPasswords.new ? (
+                            <VisibilityOff />
+                          ) : (
+                            <Visibility />
+                          )}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ mb: 2 }}
                 />
+
+                {/* 3. CAMPO: CONFIRMAR NUEVA */}
                 <TextField
                   fullWidth
                   variant="filled"
-                  type="password"
-                  label="Confirmar contraseña"
+                  type={showPasswords.confirm ? "text" : "password"}
+                  label="Confirmar nueva contraseña"
                   name="confirm_password"
                   onBlur={handleBlur}
                   onChange={handleChange}
                   value={values.confirm_password}
-                  error={!!touched.confirm_password && !!errors.confirm_password}
-                  helperText={touched.confirm_password && errors.confirm_password}
+                  error={
+                    !!touched.confirm_password && !!errors.confirm_password
+                  }
+                  helperText={
+                    touched.confirm_password && errors.confirm_password
+                  }
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          // B. Pasamos 'confirm'
+                          onClick={() => handleClickShowPassword("confirm")}
+                          onMouseDown={handleMouseDownPassword}
+                          edge="end"
+                        >
+                          {showPasswords.confirm ? (
+                            <VisibilityOff />
+                          ) : (
+                            <Visibility />
+                          )}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
                 />
               </Box>
 
