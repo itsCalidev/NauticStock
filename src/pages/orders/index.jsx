@@ -50,7 +50,9 @@ const orderSchema = yup.object().shape({
   product_id: yup.string().required("Requerido"),
   provider_id: yup.string().required("Requerido"),
   quantity: yup.number().required("Requerido").min(1, "Debe ser al menos 1"),
-  expected_date: yup.date().nullable(),
+  
+  expected_date: yup.date().nullable()
+    .min(new Date(new Date().setHours(0,0,0,0)), "La fecha no puede ser anterior a hoy"),
   notes: yup.string().nullable(),
 });
 
