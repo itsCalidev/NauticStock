@@ -13,6 +13,17 @@ const historyModel = new History();
 const fs = require("fs");
 const path = require("path");
 
+const nodemailer = require("nodemailer");
+
+// Configuración del transportador
+const transporter = nodemailer.createTransport({
+  service: "gmail", 
+  auth: {
+    user: "alansanmillanr@gmail.com", // Tu correo de Gmail
+    pass: "smae btuq wkaz qrmv" // Contraseña de aplicación generada en Google
+  }
+});
+
 class UserController extends Controller {
   constructor() {
     super();
@@ -44,6 +55,10 @@ class UserController extends Controller {
         return this.sendResponse(res, 409, null, "Ya existe un usuario con ese correo");
       }
 
+      // --- PASO 1: Preparar datos ---
+      const plainPassword = data.password; 
+      data.FirstTime = true; 
+
       let id;
       try {
         id = await this.userModel.registerUser(data);
@@ -51,26 +66,61 @@ class UserController extends Controller {
         if (dbErr.code === 'ER_DUP_ENTRY') {
           return this.sendResponse(res, 409, null, "Ya existe un usuario con esa matrícula");
         }
-        throw dbErr;
+        // Si el error es de base de datos, aquí sí lanzamos el error al catch principal
+        throw dbErr; 
       }
 
-      // Emit socket event
-      socketManager.emit("user_created", { id, ...data });
-      socketManager.emit("history_updated", {});
+      // --- PASO 2: Enviar Correo (No bloqueante) ---
+      const mailOptions = {
+        from: '"NautiStock Sistema" <alansanmillanr@gmail.com>',
+        to: data.email,
+        subject: "Acceso a NautiStock - Credenciales",
+        html: `
+          <div style="font-family: sans-serif; border: 1px solid #ddd; padding: 20px; border-radius: 10px;">
+            <h2 style="color: #8B1F3B;">Bienvenido a NautiStock</h2>
+            <p>Se ha creado una cuenta para usted en el sistema.</p>
+            <p><strong>Sus credenciales son:</strong></p>
+            <ul>
+              <li><strong>Correo:</strong> ${data.email}</li>
+              <li><strong>Contraseña:</strong> ${plainPassword}</li>
+            </ul>
+            <p style="color: #d32f2f;"><strong>Importante:</strong> Debe modificar su contraseña en el apartado de perfil en cuanto ingrese por primera vez.</p>
+          </div>
+        `
+      };
 
-      await historyModel.registerLog({
-        action_type: "Usuario Creado",
-        performed_by,
-        target_user: id,
-        old_value: null,
-        new_value: data,
-        description: `Creó usuario ${id}`
+      // Se envía sin el await para que si el servicio de correo está lento o falla, no afecte al usuario
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) console.error("⚠️ Error silencioso al enviar correo:", error);
+        else console.log("📧 Correo enviado con éxito");
       });
 
+      // --- PASO 3: Tareas secundarias (Protegidas) ---
+      if (id) {
+        try {
+          // Cambiado de "user:created" a "user_created" para que coincida con tu index.jsx
+          socketManager.emitToAll("user_created", { id, ...data });
+
+          await historyModel.create({
+            user_id: performed_by,
+            action: "crear",
+            table_name: "user",
+            record_id: id,
+            details: `Usuario creado: ${data.name} (${data.account})`,
+          });
+        } catch (secondaryErr) {
+          // Si falla el socket o el historial, solo lo logueamos, no detenemos el éxito del registro
+          console.error("⚠️ Error en tareas secundarias (Socket/Historial):", secondaryErr);
+        }
+      }
+
+      // Respuesta de éxito definitiva
       return this.sendResponse(res, 201, { id }, "Usuario creado exitosamente");
+
     } catch (err) {
-      console.error('Error en register:', err);
-      return this.sendInternalError(res, "Error al crear usuario");
+      // Este catch ahora solo se activará si la validación inicial o la base de datos fallan
+      console.error('❌ Error crítico en UserController.register:', err);
+      return this.sendInternalError(res, "Error al crear usuario en el servidor");
     }
   }
 
@@ -259,7 +309,10 @@ async updateMyPassword(req, res) {
 
       // 3. Si pasó la validación, actualizamos con la NUEVA contraseña
       // El modelo se encargará de hashear 'new_password' porque la pasamos en el campo 'password'
-      const result = await this.userModel.updateUser(id, { password: new_password });
+      const result = await this.userModel.updateUser(id, { 
+        password: new_password,
+        FirstTime: 0
+      });
 
       // Log history
       await historyModel.registerLog({
@@ -407,7 +460,8 @@ async updateMyPassword(req, res) {
         ranks: user.ranks,
         roleId: user.roleId,
         profile_pic: user.profile_pic,
-        permissions: permissions // 👈 Incluir permisos
+        permissions: permissions, // 👈 Incluir permisos
+        FirstTime: user.FirstTime
       },
     };
   }

@@ -21,6 +21,7 @@ import Hojas from "../assets/Hojitas.png";
 import { InputAdornment } from "@mui/material"; // O la ruta que uses
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
+import Swal from 'sweetalert2';
 
 const Login = () => {
   const theme = useTheme();
@@ -49,21 +50,20 @@ const Login = () => {
     }
 
     try {
-      const response = await api.post("/login", { email, password });
-      const { token, user } = response.data.data;
+    const response = await api.post("/login", { email, password });
+    const { token, user } = response.data.data;
+      
+    localStorage.setItem("token", token);
+    localStorage.setItem("user", JSON.stringify(user));
+    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      
+    // Navegación inmediata sin alertas aquí
+    if (user.FirstTime === 1 || user.FirstTime === true) {
+      navigate("/profile"); 
+    } else {
+      navigate("/dashboard");
+    }
 
-      // guardar token y datos del usuario
-      localStorage.setItem("token", token);
-      localStorage.setItem("user", JSON.stringify(user));
-      // configurar axios para enviar el token en futuras peticiones
-      api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
-      setSnackbar({
-        open: true,
-        message: "¡Bienvenido!",
-        severity: "success",
-      });
-      setTimeout(() => navigate("/dashboard"), 800);
     } catch (err) {
       setSnackbar({
         open: true,

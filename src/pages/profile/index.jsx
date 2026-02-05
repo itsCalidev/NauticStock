@@ -1,6 +1,7 @@
 // src/pages/profile/index.jsx
 import React, { useEffect, useState, useRef } from "react";
 import api from "../../api/axiosClient";
+import Swal from 'sweetalert2';
 
 import {
   Box,
@@ -33,6 +34,40 @@ const schema = yup.object().shape({
 });
 
 const Profile = () => {
+
+  //Efecto para mostrar la alerta de primera vez
+  useEffect(() => {
+    const checkFirstTime = () => {
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const localUser = JSON.parse(stored);
+        
+        if (localUser.FirstTime === 1 || localUser.FirstTime === true) {
+          Swal.fire({
+            title: '¡Bienvenido a tu Perfil!',
+            text: 'Por razones de seguridad, es obligatorio que cambies tu contraseña temporal antes de continuar usando el sistema.',
+            icon: 'info',
+            iconColor: '#8B1F3B',
+            confirmButtonText: 'Entendido, lo haré ahora',
+            confirmButtonColor: '#8B1F3B',
+            allowOutsideClick: false,
+            
+            // --- ESTO BLOQUEA CUALQUIER CAMBIO EN EL LAYOUT ---
+            heightAuto: false,
+            scrollbarPadding: false,
+            backdrop: true, // Asegura que use el fondo estándar
+            didOpen: () => {
+              // Forzamos al body a mantener su estilo original
+              document.body.style.overflow = 'auto'; 
+              document.documentElement.style.overflow = 'auto';
+            }
+          });
+        }
+      }
+    };
+    checkFirstTime();
+  }, []);
+
   const theme = useTheme();
   const colors = Token(theme.palette.mode);
   const isNonMobile = useMediaQuery("(min-width:600px)");
