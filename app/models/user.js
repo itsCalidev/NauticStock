@@ -14,6 +14,7 @@ class User extends Model {
       "status",
       "roleId",
       "profile_pic",
+      "FirstTime",
     ];
 
     this.initializeDB();
@@ -57,6 +58,11 @@ class User extends Model {
     try {
       const filteredData = {};
 
+      // Mapear 'ranks' (del formulario) a 'rank_id' (de la DB) si existe
+      if (data.ranks) {
+        data.rank_id = data.ranks;
+      }
+
       this.fillable.forEach((field) => {
         if (field in data) {
           if (field === "password") {
@@ -67,9 +73,15 @@ class User extends Model {
         }
       });
 
+
+      // Asegurar que si no viene, por defecto sea true (1) para nuevos registros
+      if (filteredData.FirstTime === undefined) {
+        filteredData.FirstTime = true;
+      }
       console.log("📝 Registering user with data:", {
         ...filteredData,
         password: "***",
+        FirstTime: filteredData.FirstTime // Esto confirmará si es true o false
       });
       return await this.insert(filteredData);
     } catch (error) {
