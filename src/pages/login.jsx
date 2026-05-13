@@ -15,7 +15,7 @@ import { Brightness4, Brightness7 } from "@mui/icons-material";
 import { Token, ColorModeContext } from "../theme";
 import AppSnackbar from "../components/AppSnackbar";
 import AccessibilitySidebar from "../pages/layouts/SidebarAccesibility";
-import LoginImage from "../assets/Boat.png";
+import LoginImage from "../assets/Barco.png";
 import LogoImage from "../assets/SEMAR.png";
 import Hojas from "../assets/Hojitas.png";
 import { InputAdornment } from "@mui/material"; // O la ruta que uses
