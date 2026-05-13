@@ -14,6 +14,7 @@ class User extends Model {
       "status",
       "roleId",
       "profile_pic",
+      "must_change_password",
     ];
 
     this.initializeDB();
