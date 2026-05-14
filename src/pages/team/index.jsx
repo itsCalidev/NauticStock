@@ -46,7 +46,7 @@ import usePermission from "../../hooks/usePermission";
 import { flexibleMatch } from "../../utils/searchUtils";
 import { exportToExcel } from "../../utils/exportUtils";
 
-// Nuevos iconos para la gestión de recuperación de cuentas
+// Nuevos iconos importados para la gestión de contraseñas
 import LockResetIcon from "@mui/icons-material/LockReset";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import LockClockIcon from "@mui/icons-material/LockClock";
@@ -86,9 +86,9 @@ export default function Team() {
   const [ranks, setRanks] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Estado para el modal de contraseña temporal y diseño
+  // Estado para el modal de contraseña temporal
   const [passwordModal, setPasswordModal] = useState({ open: false, tempPassword: "" });
-  const isDark = theme.palette.mode === "dark";
+  const isDark = theme.palette.mode === "dark"; // Para detectar el modo oscuro en el modal
 
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -204,7 +204,7 @@ export default function Team() {
     const checkAuth = () => {
       const token = localStorage.getItem("token");
       
-      // 👇 BLINDAJE: Lectura segura para evitar el error de "undefined"
+      // BLINDAJE: Lectura segura para evitar el error de "undefined"
       const userStr = localStorage.getItem("user");
       const safeUserStr = (userStr && userStr !== "undefined") ? userStr : "{}";
       const user = JSON.parse(safeUserStr);
@@ -249,26 +249,26 @@ export default function Team() {
         setError(null);
 
         const response = await api.get("/api/users");
-        // 👇 CORRECCIÓN: Extraer el array de usuarios de response.data.data
+        // Extraer el array de usuarios
         const usersList = response.data.data || [];
 
         const me = JSON.parse(localStorage.getItem("user") || "{}");
 
-        // 👇 MAPEO ULTRA SEGURO CON CONVERSIÓN A STRING
+        // MAPEO SEGURO
         const mappedUsers = usersList
           .filter((u) => u.id !== me.id)
           .map((u) => ({
             id: u.id,
-            name: String(u.name || ""), // Convertir a string seguro
-            email: String(u.email || ""), // Convertir a string seguro
-            matricula: String(u.account || ""), // Convertir a string seguro
-            grado: String(u.ranks || ""), // Convertir a string seguro
-            rankId: u.rank_id, // 👈 Added rankId
-            access: String(u.access || ""), // Convertir a string seguro
-            roleId: u.roleId, // Guardar roleId original
+            name: String(u.name || ""),
+            email: String(u.email || ""),
+            matricula: String(u.account || ""),
+            grado: String(u.ranks || ""),
+            rankId: u.rank_id,
+            access: String(u.access || ""),
+            roleId: u.roleId,
             status: u.status,
             lastAccess: u.last_access ?? null,
-            require_change: u.must_change_password || u.require_change, // 👈 Mapeo de la bandera de seguridad
+            require_change: u.must_change_password || u.require_change, 
           }));
 
         setRows(mappedUsers);
@@ -315,36 +315,43 @@ export default function Team() {
     };
   }, [socket, fetchUsers, isAuthenticated]);
 
+  // 👇 FUNCIÓN CORREGIDA PARA USAR SNACKBAR Y NO SETERROR
   const handleToggleStatus = useCallback(
     async (id, current) => {
       if (!can("user_update")) {
-        setError("No tienes permisos para modificar usuarios");
+        setSnackbar({
+          open: true,
+          message: "No tienes permisos para modificar usuarios",
+          severity: "warning",
+        });
         return;
       }
 
       try {
         const newStatus = current === 0 ? 1 : 0;
-        console.log(
-          `${newStatus === 0 ? "Rehabilitando" : "Deshabilitando"} usuario ${id}`,
-        );
-
         await api.put(`/api/users/${id}`, { status: newStatus });
-        // fetchUsers({ silent: true }); // Socket will handle update
-
-        console.log(
-          `Usuario ${newStatus === 0 ? "rehabilitado" : "deshabilitado"} exitosamente`,
-        );
+        
+        setError(null); // Limpiamos cualquier error viejo de la barra superior
+        
+        setSnackbar({
+          open: true,
+          message: `Usuario ${newStatus === 0 ? "rehabilitado" : "deshabilitado"} exitosamente`,
+          severity: "success",
+        });
       } catch (err) {
         console.error("Error al cambiar estado:", err);
-        const errorMessage =
-          err.response?.data?.error || err.message || "Error desconocido";
-        setError("Error al cambiar estado: " + errorMessage);
+        const errorMessage = err.response?.data?.error || err.message || "Error desconocido";
+        
+        setSnackbar({
+          open: true,
+          message: "Error al cambiar estado: " + errorMessage,
+          severity: "error",
+        });
       }
     },
     [can],
   );
 
-  // Función para restablecer contraseña y abrir el modal
   const handleResetPassword = async (userId) => {
     if (!can("user_update")) return;
 
@@ -386,6 +393,7 @@ export default function Team() {
         if (!payload.password) delete payload.password; // No enviar password si está vacío en edición
 
         await api.put(`/api/users/${editingUser.id}`, payload);
+        setError(null);
         setSnackbar({
           open: true,
           message: "Usuario actualizado exitosamente",
@@ -394,6 +402,7 @@ export default function Team() {
       } else {
         // Crear usuario
         await api.post("/api/users", { ...values, status: 0 });
+        setError(null);
         setSnackbar({
           open: true,
           message: "Usuario creado exitosamente",
@@ -403,36 +412,38 @@ export default function Team() {
 
       handleCloseDialog();
       resetForm();
-      // fetchUsers(); // Socket will handle update
     } catch (err) {
       console.error("Error guardando usuario:", err);
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        "Error al guardar usuario";
+      const msg = err.response?.data?.error || err.response?.data?.message || "Error al guardar usuario";
       setSnackbar({ open: true, message: msg, severity: "error" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // 👇 FUNCIÓN CORREGIDA PARA USAR SNACKBAR Y NO SETERROR
   const handleDeleteConfirm = useCallback(async () => {
     try {
       const { userId } = deleteDialog;
-      console.log("🗑️ Eliminando usuario:", userId);
-
       await api.delete(`/api/users/${userId}`);
 
-      console.log("✅ Usuario eliminado exitosamente");
-
       setDeleteDialog({ open: false, userId: null, userName: "" });
-      // fetchUsers({ silent: true }); // Socket will handle update
+      setError(null); // Limpiamos cualquier error viejo de la barra superior
+      
+      setSnackbar({
+        open: true,
+        message: "Usuario eliminado exitosamente",
+        severity: "success",
+      });
     } catch (err) {
       console.error("Error al eliminar usuario:", err);
-      setError(
-        "Error al eliminar usuario: " +
-          (err.response?.data?.error || err.message),
-      );
+      setDeleteDialog({ open: false, userId: null, userName: "" });
+      
+      setSnackbar({
+        open: true,
+        message: "Error al eliminar usuario: " + (err.response?.data?.error || err.message),
+        severity: "error",
+      });
     }
   }, [deleteDialog]);
 
@@ -544,6 +555,7 @@ export default function Team() {
         )}
       </Box>
 
+      {/* Aquí es donde se pintaba el error viejo. Ahora solo saldrá si el API de GET users falla */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -555,8 +567,8 @@ export default function Team() {
         sx={{
           backgroundColor: colors.primary[400],
           mt: "40px",
-          maxHeight: "60vh", // 👈 altura máxima (ajustable)
-          overflowY: "auto", // 👈 scroll vertical
+          maxHeight: "60vh",
+          overflowY: "auto",
         }}
       >
         <Table stickyHeader>
@@ -592,7 +604,6 @@ export default function Team() {
                   <Typography fontWeight="bold">Estado</Typography>
                 </TableCell>
               )}
-
               {viewConfig.lastAccess && (
                 <TableCell>
                   <Typography fontWeight="bold">Último Acceso</Typography>
@@ -828,7 +839,7 @@ export default function Team() {
               name: editingUser?.name || "",
               email: editingUser?.email || "",
               account: editingUser?.matricula || "",
-              ranks: editingUser?.rankId || "", // 👈 Use rankId
+              ranks: editingUser?.rankId || "", 
               roleId: editingUser?.roleId || "",
               password: "",
               isEditing: !!editingUser,
