@@ -77,7 +77,7 @@ const CambioObligatorio = () => {
           onChange={(e) => setPasswords({ ...passwords, confirmPassword: e.target.value })}
         />
 
-        <Button fullWidth variant="contained" color="secondary" sx={{ py: 1.5, fontWeight: "bold" }} onClick={handleSubmit}>
+        <Button fullWidth variant="contained" backgroundColor="#8B1F3B" sx={{ py: 1.5, fontWeight: "bold" }} onClick={handleSubmit}>
           Actualizar Contraseña
         </Button>
       </Box>

@@ -1035,7 +1035,7 @@ export default function Team() {
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle sx={{ backgroundColor: safeColors.blueAccent[700], color: "#fff", textAlign: "center" }}>
+        <DialogTitle sx={{ backgroundColor: theme.palette.warning.main, color: "#fff", textAlign: "center" }}>
           Contraseña Restablecida
         </DialogTitle>
         <DialogContent sx={{ mt: 2, textAlign: "center" }}>
