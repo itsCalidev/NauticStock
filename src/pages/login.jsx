@@ -15,7 +15,7 @@ import { Brightness4, Brightness7 } from "@mui/icons-material";
 import { Token, ColorModeContext } from "../theme";
 import AppSnackbar from "../components/AppSnackbar";
 import AccessibilitySidebar from "../pages/layouts/SidebarAccesibility";
-import LoginImage from "../assets/Mantenimiento_Elect.png";
+import LoginImage from "../assets/Barco.png";
 import LogoImage from "../assets/SEMAR.png";
 import Hojas from "../assets/Hojitas.png";
 import { InputAdornment } from "@mui/material"; // O la ruta que uses
@@ -50,12 +50,51 @@ const Login = () => {
 
     try {
       const response = await api.post("/login", { email, password });
-      const { token, user } = response.data.data;
+      
+      // Extraemos lo que mandó el servidor
+      const responseData = response.data.data || response.data; 
+      const { token, user } = responseData;
 
-      // guardar token y datos del usuario
+      // 👇 EL TRUCO MAESTRO: Leer por dentro del JWT
+      let requiereCambio = false;
+      
+      if (token) {
+        try {
+          // Un JWT tiene 3 partes separadas por punto. La [1] es el Payload.
+          const payloadBase64 = token.split('.')[1];
+          // Decodificamos de Base64 a texto y lo convertimos a un objeto de JavaScript
+          const payloadDecoded = JSON.parse(atob(payloadBase64));
+          
+          // Si el token dice "isRestricted: true" o si el backend no mandó datos de usuario:
+          if (payloadDecoded.isRestricted === true || !user) {
+            requiereCambio = true;
+          }
+        } catch (error) {
+          console.error("Error al decodificar el token JWT:", error);
+        }
+      }
+
+      // Si detectamos la restricción, lo mandamos al encierro
+      if (requiereCambio) {
+        sessionStorage.setItem("temp_restricted_token", token);
+        
+        setSnackbar({
+          open: true,
+          message: "Por seguridad, es obligatorio cambiar tu contraseña temporal.",
+          severity: "warning",
+        });
+        
+        setTimeout(() => navigate("/cambio-obligatorio"), 1500);
+        return; 
+      }
+
+      // Flujo de login normal si no está restringido
+      if (!user) {
+         throw new Error("Error del servidor: No se recibieron los datos del usuario.");
+      }
+
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
-      // configurar axios para enviar el token en futuras peticiones
       api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
       setSnackbar({
@@ -64,10 +103,11 @@ const Login = () => {
         severity: "success",
       });
       setTimeout(() => navigate("/dashboard"), 800);
+      
     } catch (err) {
       setSnackbar({
         open: true,
-        message: err.response?.data?.error || err.message,
+        message: err.response?.data?.error || err.response?.data?.message || err.message,
         severity: "error",
       });
     }

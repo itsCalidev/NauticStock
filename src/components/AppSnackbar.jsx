@@ -4,7 +4,7 @@ import { Snackbar, Alert } from "@mui/material";
 const AppSnackbar = ({ open, onClose, message, severity = "success" }) => {
   return (
     <Snackbar
-      key={message}                       // ← aquí!
+      key={message}                      
       open={open}
       autoHideDuration={4000}
       onClose={onClose}

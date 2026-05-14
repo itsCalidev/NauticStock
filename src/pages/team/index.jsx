@@ -46,6 +46,11 @@ import usePermission from "../../hooks/usePermission";
 import { flexibleMatch } from "../../utils/searchUtils";
 import { exportToExcel } from "../../utils/exportUtils";
 
+// Nuevos iconos importados para la gestión de contraseñas
+import LockResetIcon from "@mui/icons-material/LockReset";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import LockClockIcon from "@mui/icons-material/LockClock";
+
 const userSchema = yup.object().shape({
   name: yup.string().required("Requerido"),
   password: yup
@@ -80,6 +85,10 @@ export default function Team() {
   const [editingUser, setEditingUser] = useState(null);
   const [ranks, setRanks] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Estado para el modal de contraseña temporal
+  const [passwordModal, setPasswordModal] = useState({ open: false, tempPassword: "" });
+  const isDark = theme.palette.mode === "dark"; // Para detectar el modo oscuro en el modal
 
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -194,7 +203,11 @@ export default function Team() {
   useEffect(() => {
     const checkAuth = () => {
       const token = localStorage.getItem("token");
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      
+      // BLINDAJE: Lectura segura para evitar el error de "undefined"
+      const userStr = localStorage.getItem("user");
+      const safeUserStr = (userStr && userStr !== "undefined") ? userStr : "{}";
+      const user = JSON.parse(safeUserStr);
 
       console.log("Team: Verificando auth...", { token: !!token, user });
 
@@ -236,25 +249,26 @@ export default function Team() {
         setError(null);
 
         const response = await api.get("/api/users");
-        // 👇 CORRECCIÓN: Extraer el array de usuarios de response.data.data
+        // Extraer el array de usuarios
         const usersList = response.data.data || [];
 
         const me = JSON.parse(localStorage.getItem("user") || "{}");
 
-        // 👇 MAPEO ULTRA SEGURO CON CONVERSIÓN A STRING
+        // MAPEO SEGURO
         const mappedUsers = usersList
           .filter((u) => u.id !== me.id)
           .map((u) => ({
             id: u.id,
-            name: String(u.name || ""), // Convertir a string seguro
-            email: String(u.email || ""), // Convertir a string seguro
-            matricula: String(u.account || ""), // Convertir a string seguro
-            grado: String(u.ranks || ""), // Convertir a string seguro
-            rankId: u.rank_id, // 👈 Added rankId
-            access: String(u.access || ""), // Convertir a string seguro
-            roleId: u.roleId, // Guardar roleId original
+            name: String(u.name || ""),
+            email: String(u.email || ""),
+            matricula: String(u.account || ""),
+            grado: String(u.ranks || ""),
+            rankId: u.rank_id,
+            access: String(u.access || ""),
+            roleId: u.roleId,
             status: u.status,
             lastAccess: u.last_access ?? null,
+            require_change: u.must_change_password || u.require_change, 
           }));
 
         setRows(mappedUsers);
@@ -301,34 +315,62 @@ export default function Team() {
     };
   }, [socket, fetchUsers, isAuthenticated]);
 
+  // 👇 FUNCIÓN CORREGIDA PARA USAR SNACKBAR Y NO SETERROR
   const handleToggleStatus = useCallback(
     async (id, current) => {
       if (!can("user_update")) {
-        setError("No tienes permisos para modificar usuarios");
+        setSnackbar({
+          open: true,
+          message: "No tienes permisos para modificar usuarios",
+          severity: "warning",
+        });
         return;
       }
 
       try {
         const newStatus = current === 0 ? 1 : 0;
-        console.log(
-          `${newStatus === 0 ? "Rehabilitando" : "Deshabilitando"} usuario ${id}`,
-        );
-
         await api.put(`/api/users/${id}`, { status: newStatus });
-        // fetchUsers({ silent: true }); // Socket will handle update
-
-        console.log(
-          `Usuario ${newStatus === 0 ? "rehabilitado" : "deshabilitado"} exitosamente`,
-        );
+        
+        setError(null); // Limpiamos cualquier error viejo de la barra superior
+        
+        setSnackbar({
+          open: true,
+          message: `Usuario ${newStatus === 0 ? "rehabilitado" : "deshabilitado"} exitosamente`,
+          severity: "success",
+        });
       } catch (err) {
         console.error("Error al cambiar estado:", err);
-        const errorMessage =
-          err.response?.data?.error || err.message || "Error desconocido";
-        setError("Error al cambiar estado: " + errorMessage);
+        const errorMessage = err.response?.data?.error || err.message || "Error desconocido";
+        
+        setSnackbar({
+          open: true,
+          message: "Error al cambiar estado: " + errorMessage,
+          severity: "error",
+        });
       }
     },
     [can],
   );
+
+  const handleResetPassword = async (userId) => {
+    if (!can("user_update")) return;
+
+    try {
+      const response = await api.post(`/api/users/${userId}/reset-password`);
+      const tempPassword = response.data.tempPassword || response.data.data?.tempPassword;
+
+      if (response.status === 200) {
+        setPasswordModal({ open: true, tempPassword: tempPassword });
+      }
+    } catch (err) {
+      console.error("Error al resetear contraseña:", err);
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.error || "Error al restablecer contraseña",
+        severity: "error",
+      });
+    }
+  };
 
   const handleOpenDialog = (user = null) => {
     setEditingUser(user);
@@ -351,6 +393,7 @@ export default function Team() {
         if (!payload.password) delete payload.password; // No enviar password si está vacío en edición
 
         await api.put(`/api/users/${editingUser.id}`, payload);
+        setError(null);
         setSnackbar({
           open: true,
           message: "Usuario actualizado exitosamente",
@@ -359,6 +402,7 @@ export default function Team() {
       } else {
         // Crear usuario
         await api.post("/api/users", { ...values, status: 0 });
+        setError(null);
         setSnackbar({
           open: true,
           message: "Usuario creado exitosamente",
@@ -368,36 +412,38 @@ export default function Team() {
 
       handleCloseDialog();
       resetForm();
-      // fetchUsers(); // Socket will handle update
     } catch (err) {
       console.error("Error guardando usuario:", err);
-      const msg =
-        err.response?.data?.error ||
-        err.response?.data?.message ||
-        "Error al guardar usuario";
+      const msg = err.response?.data?.error || err.response?.data?.message || "Error al guardar usuario";
       setSnackbar({ open: true, message: msg, severity: "error" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // 👇 FUNCIÓN CORREGIDA PARA USAR SNACKBAR Y NO SETERROR
   const handleDeleteConfirm = useCallback(async () => {
     try {
       const { userId } = deleteDialog;
-      console.log("🗑️ Eliminando usuario:", userId);
-
       await api.delete(`/api/users/${userId}`);
 
-      console.log("✅ Usuario eliminado exitosamente");
-
       setDeleteDialog({ open: false, userId: null, userName: "" });
-      // fetchUsers({ silent: true }); // Socket will handle update
+      setError(null); // Limpiamos cualquier error viejo de la barra superior
+      
+      setSnackbar({
+        open: true,
+        message: "Usuario eliminado exitosamente",
+        severity: "success",
+      });
     } catch (err) {
       console.error("Error al eliminar usuario:", err);
-      setError(
-        "Error al eliminar usuario: " +
-          (err.response?.data?.error || err.message),
-      );
+      setDeleteDialog({ open: false, userId: null, userName: "" });
+      
+      setSnackbar({
+        open: true,
+        message: "Error al eliminar usuario: " + (err.response?.data?.error || err.message),
+        severity: "error",
+      });
     }
   }, [deleteDialog]);
 
@@ -509,6 +555,7 @@ export default function Team() {
         )}
       </Box>
 
+      {/* Aquí es donde se pintaba el error viejo. Ahora solo saldrá si el API de GET users falla */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -520,8 +567,8 @@ export default function Team() {
         sx={{
           backgroundColor: colors.primary[400],
           mt: "40px",
-          maxHeight: "60vh", // 👈 altura máxima (ajustable)
-          overflowY: "auto", // 👈 scroll vertical
+          maxHeight: "60vh",
+          overflowY: "auto",
         }}
       >
         <Table stickyHeader>
@@ -553,18 +600,17 @@ export default function Team() {
                 </TableCell>
               )}
               {viewConfig.status && (
-                <TableCell>
+                <TableCell align="center">
                   <Typography fontWeight="bold">Estado</Typography>
                 </TableCell>
               )}
-
               {viewConfig.lastAccess && (
                 <TableCell>
                   <Typography fontWeight="bold">Último Acceso</Typography>
                 </TableCell>
               )}
               {viewConfig.actions && (
-                <TableCell>
+                <TableCell align="center">
                   <Typography fontWeight="bold">Acciones</Typography>
                 </TableCell>
               )}
@@ -584,12 +630,19 @@ export default function Team() {
                           alignItems: "center",
                           opacity: isActive ? 1 : 0.5,
                           textDecoration: isActive ? "none" : "line-through",
+                          gap: 1,
                         }}
                       >
                         <SearchHighlighter
                           text={row.name}
                           searchTerm={searchTerm}
                         />
+                        {/* Indicador visual de cambio de contraseña pendiente */}
+                        {row.require_change && (
+                          <Tooltip title="Cambio de contraseña pendiente">
+                            <LockClockIcon sx={{ color: "warning.main", fontSize: "1rem" }} />
+                          </Tooltip>
+                        )}
                         {!isActive && (
                           <Box
                             component="span"
@@ -682,6 +735,22 @@ export default function Team() {
                   {viewConfig.actions && (
                     <TableCell align="center">
                       <Box display="flex" justifyContent="center" gap={1}>
+                        {/* Botón para Restablecer Contraseña */}
+                        <Tooltip title={isActive ? "Restablecer contraseña" : "Usuario inactivo"}>
+                          <span>
+                            {can("user_update") && (
+                              <IconButton
+                                size="small"
+                                color="info"
+                                onClick={() => handleResetPassword(row.id)}
+                                disabled={!isActive}
+                              >
+                                <LockResetIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                          </span>
+                        </Tooltip>
+
                         <Tooltip
                           title={
                             isActive
@@ -770,7 +839,7 @@ export default function Team() {
               name: editingUser?.name || "",
               email: editingUser?.email || "",
               account: editingUser?.matricula || "",
-              ranks: editingUser?.rankId || "", // 👈 Use rankId
+              ranks: editingUser?.rankId || "", 
               roleId: editingUser?.roleId || "",
               password: "",
               isEditing: !!editingUser,
@@ -955,6 +1024,60 @@ export default function Team() {
             variant="contained"
           >
             Eliminar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal para mostrar la Contraseña Temporal generada */}
+      <Dialog
+        open={passwordModal.open}
+        onClose={() => setPasswordModal({ open: false, tempPassword: "" })}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ backgroundColor: theme.palette.warning.main, color: "#fff", textAlign: "center" }}>
+          Contraseña Restablecida
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2, textAlign: "center" }}>
+          <Typography variant="body1" mb={3} mt={1}>
+            La contraseña temporal ha sido generada exitosamente. Por favor, cópiela y entréguesela al usuario.
+          </Typography>
+          
+          <Box
+            sx={{
+              backgroundColor: isDark ? "#141b2d" : "#f5f5f5",
+              p: 2,
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              border: `1px solid ${colors.grey[500]}`
+            }}
+          >
+            <Typography variant="h4" fontWeight="bold" sx={{ letterSpacing: "3px", ml: 2 }}>
+              {passwordModal.tempPassword}
+            </Typography>
+            <Tooltip title="Copiar al portapapeles">
+              <IconButton
+                color="info"
+                onClick={() => {
+                  navigator.clipboard.writeText(passwordModal.tempPassword);
+                  setSnackbar({ open: true, message: "Contraseña copiada al portapapeles", severity: "success" });
+                }}
+              >
+                <ContentCopyIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: "center", mb: 2 }}>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={() => setPasswordModal({ open: false, tempPassword: "" })}
+            sx={{ px: 4, fontWeight: "bold" }}
+          >
+            Entendido
           </Button>
         </DialogActions>
       </Dialog>

@@ -5,7 +5,9 @@ const auth = require('../middleware/auth');
 const isAdmin = require('../middleware/isAdmin');
 const UserController = require('../controllers/userController');
 const userCtrl = new UserController();
-const upload = require('../middleware/upload'); // 👈 FALTABA ESTO
+const upload = require('../middleware/upload');
+
+const userController = new UserController();
 
 // 👇 NUEVA RUTA: Actualizar mi propio perfil (solo contraseña)
 router.put(
@@ -65,5 +67,11 @@ router.put(
 router.delete('/:id', auth, isAdmin, async (req, res) => {
   await userCtrl.delete(req, res);
 });
+
+// Endpoint para el Administrador
+router.post('/:id/reset-password', auth, isAdmin, userController.resetPasswordAdmin.bind(userController));
+
+// Endpoint para el Usuario forzado a cambiar (Usa auth porque el token restringido es un JWT válido)
+router.post('/force-password-change', auth, userController.forcePasswordChange.bind(userController));
 
 module.exports = router;

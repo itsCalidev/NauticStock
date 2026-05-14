@@ -13,6 +13,8 @@ const historyModel = new History();
 const fs = require("fs");
 const path = require("path");
 
+const crypto = require('crypto');
+
 class UserController extends Controller {
   constructor() {
     super();
@@ -373,7 +375,7 @@ async updateMyPassword(req, res) {
     }
   }
 
-  /** Login */
+ /** Login Modificado */
   async login(data) {
     const error = Validator.validate(data, {
       email: { required: true },
@@ -384,20 +386,32 @@ async updateMyPassword(req, res) {
 
     const user = await this.userModel.findByEmail(data.email);
     if (!user) throw new Error("Usuario no encontrado");
-    if (user.status === 1)
-      throw new Error("Cuenta inactiva. Contacta al administrador.");
+    if (user.status === 1) throw new Error("Cuenta inactiva. Contacta al administrador.");
 
     const isMatch = bcrypt.compareSync(data.password, user.password);
     if (!isMatch) throw new Error("Contraseña incorrecta");
 
+    // --- INTERCEPCIÓN DE CONTRASEÑA TEMPORAL ---
+    if (user.must_change_password === 1) {
+      // Token restringido válido por 15 minutos
+      const restrictPayload = { id: user.id, isRestricted: true };
+      const restrictToken = jwt.sign(restrictPayload, config.jwtSecret, { expiresIn: '15m' });
+
+      return {
+        requirePasswordChange: true,
+        token: restrictToken,
+        message: "Por razones de seguridad, debes cambiar tu contraseña temporal."
+      };
+    }
+    // -------------------------------------------
+
     await this.userModel.updateLastAccess(user.id);
     const payload = { id: user.id, name: user.name, roleId: user.roleId };
     const token = jwt.sign(payload, config.jwtSecret, config.jwtOptions);
-
-    // Obtener permisos del rol
     const permissions = await this.userModel.getPermissions(user.roleId);
 
     return {
+      requirePasswordChange: false,
       token,
       user: {
         id: user.id,
@@ -407,10 +421,86 @@ async updateMyPassword(req, res) {
         ranks: user.ranks,
         roleId: user.roleId,
         profile_pic: user.profile_pic,
-        permissions: permissions // 👈 Incluir permisos
+        permissions: permissions
       },
     };
   }
+
+  /** Restablecer contraseña administrativamente (Soporte Técnico) */
+  async resetPasswordAdmin(req, res) {
+    try {
+      const targetUserId = req.params.id;
+      const performed_by = req.user.id;
+
+      if (!targetUserId) {
+        return this.sendResponse(res, 400, null, "ID de usuario inválido.");
+      }
+
+      const targetUser = await this.userModel.findById(targetUserId);
+      if (!targetUser) {
+        return this.sendNotFound(res, "Usuario objetivo no encontrado.");
+      }
+
+      // Generar contraseña aleatoria de 8 caracteres (ej. 'a1b2c3d4')
+      const tempPassword = crypto.randomBytes(4).toString('hex');
+
+      // Actualizar usuario en BD encendiendo la bandera
+      await this.userModel.updateUser(targetUserId, { 
+        password: tempPassword,
+        must_change_password: 1 
+      });
+
+      await historyModel.registerLog({
+        action_type: "Restablecimiento de Contraseña",
+        performed_by,
+        target_user: targetUserId,
+        old_value: null,
+        new_value: null,
+        description: `Restableció contraseña del usuario ${targetUserId} a temporal.`
+      });
+
+      // Retornamos la contraseña en texto plano UNA SOLA VEZ para que el Admin la copie
+      return this.sendResponse(res, 200, { tempPassword }, "Contraseña restablecida exitosamente.");
+
+    } catch (err) {
+      console.error('Error en resetPasswordAdmin:', err);
+      return this.sendInternalError(res, "Error al restablecer contraseña.");
+    }
+  }
+
+  /** Cambio obligatorio de contraseña (Usuario) */
+  async forcePasswordChange(req, res) {
+    try {
+      const id = req.user.id; // Viene del token restringido
+      const { new_password } = req.body;
+
+      if (!new_password || new_password.length < 6) {
+        return this.sendResponse(res, 400, null, "La nueva contraseña debe tener al menos 6 caracteres.");
+      }
+
+      // Actualizamos la contraseña y APAGAMOS la bandera
+      await this.userModel.updateUser(id, { 
+        password: new_password,
+        must_change_password: 0 
+      });
+
+      await historyModel.registerLog({
+        action_type: "Contraseña Cambiada",
+        performed_by: id,
+        target_user: id,
+        old_value: null,
+        new_value: null,
+        description: `Usuario ${id} cambió su contraseña temporal obligatoria.`
+      });
+
+      return this.sendResponse(res, 200, { updated: true }, "Contraseña actualizada. Ya puedes iniciar sesión normalmente.");
+
+    } catch (err) {
+      console.error('Error en forcePasswordChange:', err);
+      return this.sendInternalError(res, "Error al procesar el cambio de contraseña.");
+    }
+  }
+  
 }
 
 module.exports = UserController;
