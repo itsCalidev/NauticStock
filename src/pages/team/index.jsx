@@ -46,6 +46,11 @@ import usePermission from "../../hooks/usePermission";
 import { flexibleMatch } from "../../utils/searchUtils";
 import { exportToExcel } from "../../utils/exportUtils";
 
+// Nuevos iconos para la gestión de recuperación de cuentas
+import LockResetIcon from "@mui/icons-material/LockReset";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import LockClockIcon from "@mui/icons-material/LockClock";
+
 const userSchema = yup.object().shape({
   name: yup.string().required("Requerido"),
   password: yup
@@ -80,6 +85,10 @@ export default function Team() {
   const [editingUser, setEditingUser] = useState(null);
   const [ranks, setRanks] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Estado para el modal de contraseña temporal y diseño
+  const [passwordModal, setPasswordModal] = useState({ open: false, tempPassword: "" });
+  const isDark = theme.palette.mode === "dark";
 
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -194,7 +203,11 @@ export default function Team() {
   useEffect(() => {
     const checkAuth = () => {
       const token = localStorage.getItem("token");
-      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      
+      // 👇 BLINDAJE: Lectura segura para evitar el error de "undefined"
+      const userStr = localStorage.getItem("user");
+      const safeUserStr = (userStr && userStr !== "undefined") ? userStr : "{}";
+      const user = JSON.parse(safeUserStr);
 
       console.log("Team: Verificando auth...", { token: !!token, user });
 
@@ -255,6 +268,7 @@ export default function Team() {
             roleId: u.roleId, // Guardar roleId original
             status: u.status,
             lastAccess: u.last_access ?? null,
+            require_change: u.must_change_password || u.require_change, // 👈 Mapeo de la bandera de seguridad
           }));
 
         setRows(mappedUsers);
@@ -329,6 +343,27 @@ export default function Team() {
     },
     [can],
   );
+
+  // Función para restablecer contraseña y abrir el modal
+  const handleResetPassword = async (userId) => {
+    if (!can("user_update")) return;
+
+    try {
+      const response = await api.post(`/api/users/${userId}/reset-password`);
+      const tempPassword = response.data.tempPassword || response.data.data?.tempPassword;
+
+      if (response.status === 200) {
+        setPasswordModal({ open: true, tempPassword: tempPassword });
+      }
+    } catch (err) {
+      console.error("Error al resetear contraseña:", err);
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.error || "Error al restablecer contraseña",
+        severity: "error",
+      });
+    }
+  };
 
   const handleOpenDialog = (user = null) => {
     setEditingUser(user);
@@ -553,7 +588,7 @@ export default function Team() {
                 </TableCell>
               )}
               {viewConfig.status && (
-                <TableCell>
+                <TableCell align="center">
                   <Typography fontWeight="bold">Estado</Typography>
                 </TableCell>
               )}
@@ -564,7 +599,7 @@ export default function Team() {
                 </TableCell>
               )}
               {viewConfig.actions && (
-                <TableCell>
+                <TableCell align="center">
                   <Typography fontWeight="bold">Acciones</Typography>
                 </TableCell>
               )}
@@ -584,12 +619,19 @@ export default function Team() {
                           alignItems: "center",
                           opacity: isActive ? 1 : 0.5,
                           textDecoration: isActive ? "none" : "line-through",
+                          gap: 1,
                         }}
                       >
                         <SearchHighlighter
                           text={row.name}
                           searchTerm={searchTerm}
                         />
+                        {/* Indicador visual de cambio de contraseña pendiente */}
+                        {row.require_change && (
+                          <Tooltip title="Cambio de contraseña pendiente">
+                            <LockClockIcon sx={{ color: "warning.main", fontSize: "1rem" }} />
+                          </Tooltip>
+                        )}
                         {!isActive && (
                           <Box
                             component="span"
@@ -682,6 +724,22 @@ export default function Team() {
                   {viewConfig.actions && (
                     <TableCell align="center">
                       <Box display="flex" justifyContent="center" gap={1}>
+                        {/* Botón para Restablecer Contraseña */}
+                        <Tooltip title={isActive ? "Restablecer contraseña" : "Usuario inactivo"}>
+                          <span>
+                            {can("user_update") && (
+                              <IconButton
+                                size="small"
+                                color="info"
+                                onClick={() => handleResetPassword(row.id)}
+                                disabled={!isActive}
+                              >
+                                <LockResetIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                          </span>
+                        </Tooltip>
+
                         <Tooltip
                           title={
                             isActive
@@ -955,6 +1013,60 @@ export default function Team() {
             variant="contained"
           >
             Eliminar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal para mostrar la Contraseña Temporal generada */}
+      <Dialog
+        open={passwordModal.open}
+        onClose={() => setPasswordModal({ open: false, tempPassword: "" })}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ backgroundColor: safeColors.blueAccent[700], color: "#fff", textAlign: "center" }}>
+          Contraseña Restablecida
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2, textAlign: "center" }}>
+          <Typography variant="body1" mb={3} mt={1}>
+            La contraseña temporal ha sido generada exitosamente. Por favor, cópiela y entréguesela al usuario.
+          </Typography>
+          
+          <Box
+            sx={{
+              backgroundColor: isDark ? "#141b2d" : "#f5f5f5",
+              p: 2,
+              borderRadius: "8px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              border: `1px solid ${colors.grey[500]}`
+            }}
+          >
+            <Typography variant="h4" fontWeight="bold" sx={{ letterSpacing: "3px", ml: 2 }}>
+              {passwordModal.tempPassword}
+            </Typography>
+            <Tooltip title="Copiar al portapapeles">
+              <IconButton
+                color="info"
+                onClick={() => {
+                  navigator.clipboard.writeText(passwordModal.tempPassword);
+                  setSnackbar({ open: true, message: "Contraseña copiada al portapapeles", severity: "success" });
+                }}
+              >
+                <ContentCopyIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: "center", mb: 2 }}>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={() => setPasswordModal({ open: false, tempPassword: "" })}
+            sx={{ px: 4, fontWeight: "bold" }}
+          >
+            Entendido
           </Button>
         </DialogActions>
       </Dialog>

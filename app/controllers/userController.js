@@ -13,6 +13,8 @@ const historyModel = new History();
 const fs = require("fs");
 const path = require("path");
 
+const crypto = require('crypto');
+
 class UserController extends Controller {
   constructor() {
     super();

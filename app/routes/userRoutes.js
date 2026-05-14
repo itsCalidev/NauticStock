@@ -6,7 +6,6 @@ const isAdmin = require('../middleware/isAdmin');
 const UserController = require('../controllers/userController');
 const userCtrl = new UserController();
 const upload = require('../middleware/upload');
-const isAdmin = require('../middleware/isAdmin');
 
 const userController = new UserController();
 
